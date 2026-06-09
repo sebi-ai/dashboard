@@ -172,6 +172,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         right_layout.addStretch()
 
+        # status
+        self.status = QtWidgets.QLabel("")
+        self.status.setStyleSheet("color: rgba(255,255,255,0.65); font-size: 12px;")
+        right_layout.addWidget(self.status)
+
         main_layout.addWidget(right_frame, 1)
 
         # global stylesheet for modern look
@@ -196,7 +201,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.fetch_timer = QtCore.QTimer(self)
         self.fetch_timer.timeout.connect(self.start_fetch)
-        self.fetch_timer.start(30_000)  # fetch every 30s
+        self.fetch_timer.start(60_000)  # fetch every 60s
 
         self.tray_icon = QSystemTray(self)
 
@@ -261,6 +266,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.time_label.setFont(font)
 
     def start_fetch(self) -> None:
+        self.status.setText("Fetching data...")
         self.thread = FetchThread()
         self.thread.data_ready.connect(self.on_data)
         self.thread.error.connect(self.on_error)
@@ -305,10 +311,11 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.wind_label.setText("Wind: — | Humidity: —")
 
+        self.status.setText("Last update: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         self.update_clock()
 
     def on_error(self, message: str) -> None:
-        self.tray_icon.show_message("Stardance Dashboard", "Error fetching data: " + message)
+        self.status.setText("Error fetching data: " + message)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         # minimize to tray instead of closing
