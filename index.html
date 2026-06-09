@@ -4,21 +4,37 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard</title>
-    <style src="styles.css"></style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div id="head">
         <button id="home-btn" class="btn">Home</button>
-        <a href="#" id="redirect-start-btn"><button class="btn">Open Dashboard</button></a>
-        <button class="btn" id="settings-btn">Settings</button>
-        <button class="btn" id="about-btn">About me</button>
+        <button id="redirect-start-btn" class="btn">Open Dashboard</button>
+        <button id="settings-btn" class="btn">Settings</button>
+        <button id="about-btn" class="btn">About me</button>
     </div>
     <section id="home">
         <h1>Welcome to my Dashboard</h1>
         <p>It's the first (hopefully) useable website I made, so don't expect too much.</p>
+        <br>
+        <h3>How it works</h3>
+        <ol>
+            <li>Press the settings button in the menu.</li>
+            <li>Configure your preferences.</li>
+            <li>Press the "save" button to save your changes.</li>
+            <li>Press the "open Dashboard" button in the menu.</li>
+            <li>Then press "start Dashboard"</li>
+        </ol>
+        <br>
+        <h3>Help</h3>
+        <p>If you have any questions or need assistance, please feel free to contact me</p>
+        <p>tx.9394.tx@outlook.de</p>
     </section>
-    <section id="dashboard">
+    <section id="dashboard" style="display:none;">
         <button id="start-btn" class="btn">Start Dashboard</button>
+    </section>
+    <section id="settings" style="display:none;">
+        <p>test</p>
     </section>
     <script src="script.js"></script>
 </body>

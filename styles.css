@@ -1,9 +1,26 @@
-#start-btn {
-  display: none;
-  }
-#dashboard {
+section {
   display: none;
 }
-#dashboard {
-  display: none;
+
+#home {
+  display: block;
+}
+#start-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%; 
+    transform: translate(-50%, -50%);
+    
+}
+.btn {
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 15px;
+    background-color: grey;
+    color: white;
+}
+
+.btn:hover {
+    background-color: #212121;
 }
