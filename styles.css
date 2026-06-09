@@ -5,3 +5,32 @@
   flex-direction: column;
   min-height: 100vh;
 }
+
+#settings {
+  display: none;
+}
+
+.btn {
+  border-radius: 22px;
+  background-color: rgba(0, 30, 255, 0.72);
+  color: rgb(236, 234, 234);
+  border-color: rgba(0, 17, 142, 0.72);
+  width: 250px;
+  height: 50px;
+  font-size: 17px;
+  border: none;
+  outline: none;
+}
+
+.btn:hover {
+  background-color: rgba(0, 19, 161, 0.72);
+  color: white;
+  cursor: pointer;
+}
+
+.btn:active {
+  background-color: rgba(0, 11, 97, 0.72);
+  color: white;
+  transform: scale(0.98);
+  transition: all 0.05s ease-in-out;
+}
