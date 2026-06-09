@@ -19,7 +19,7 @@ pip install -r requirements.txt
 ```bash
 python app_gui.py
 ```
-
+gi
 Features
 
 - Large clock prominently displayed.
