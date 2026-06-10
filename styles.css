@@ -10,6 +10,10 @@
   display: none;
 }
 
+#About-me {
+  display: none;
+}
+
 .btn {
   border-radius: 22px;
   background-color: rgba(0, 30, 255, 0.72);
@@ -20,6 +24,10 @@
   font-size: 17px;
   border: none;
   outline: none;
+  justify-content: center;
+  align-items: center;
+  align-content: center;
+  align-self: center;
 }
 
 .btn:hover {
@@ -42,6 +50,71 @@
   justify-content: center;  
   align-items: top;       
   gap: 40px;
-  border: 5px solid black;
-  border-radius: 30px;           
+  border: 2px solid rgb(4, 4, 192);
+  border-radius: 30px;  
+}
+
+p, ul, ol, input, label {
+  font-size: 20px;
+}
+
+#home {
+  border: 2px solid rgb(4, 4, 192);
+  border-radius: 50px;
+  height: 530px;
+  margin-top: 50px;
+  padding: 35px;
+}
+
+#Location {
+  border: 2px solid rgb(4, 4, 192);
+  border-radius: 50px;
+  height: 250px;
+  padding-top: 20px;
+  padding-left: 20px;
+  width: 400px;
+}
+
+#Widgets {
+  border: 2px solid rgb(4, 4, 192);
+  border-radius: 50px;
+  padding-top: 20px;
+  padding-left: 20px;
+  width: 750px;
+  height: 350px;
+  margin-bottom: 50px;
+}
+
+input[type="text"] {
+  border: 2px solid rgb(4, 4, 192);
+  border-radius: 15px;
+}
+
+input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: rgb(4, 4, 192); 
+}
+
+#widgets-list {
+  list-style-type: none;
+  padding-left: 0px;
+}
+
+.star-checkbox {
+  appearance: none;
+  width: 40px;
+  height: 40px;
+  background-color: gray;
+  cursor: pointer;
+  clip-path: polygon(
+    50% 0%, 61% 35%, 98% 35%, 68% 57%,
+    79% 91%, 50% 70%, 21% 91%, 32% 57%,
+    2% 35%, 39% 35%
+  );
+}
+
+.star-checkbox:checked {
+  background-color: gold;
 }

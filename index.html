@@ -8,16 +8,16 @@
 </head>
 <body>
     <div id="head">
-        <a href="#home"><button id="home-btn" class="btn">Home</button></a>
-        <a href="#dashboard"><button  id="redirect-start-btn" class="btn">Open Dashboard</button></a>
-        <a href="#settings"><button class="btn" id="settings-btn">Settings</button></a>
+        <button class="btn" id="home-btn">Home</button>
+        <button id="redirect-start-btn" class="btn">Open Dashboard</button>
+        <button class="btn" id="settings-btn">Settings</button>
         <button class="btn" id="about-btn">About me</button>
     </div>
     <section id="home">
         <h1>Welcome to my Dashboard</h1>
         <p>It's the first (hopefully) useable website I made, so don't expect too much.</p>
         <br>
-        <h3>How it works</h3>
+        <h2>How it works</h2>
         <ol>
             <li>Press the "Settings" button in the menu.</li>
             <li>Change the settings to your liking.</li>
@@ -26,7 +26,7 @@
             <li>Enjoy your dashboard!</li>
         </ol>
         <br>
-        <h3>Help</h3>
+        <h2>Help</h2>
         <p>Have questions, feedback, or suggestions? Feel free to reach out at <br>
         tx.9394.tx@outlook.de</p>
     </section>
@@ -38,6 +38,60 @@
     <section id="settings">
         <h1>Settings</h1>
         <p>Adjust your dashboard as you want it, then press the "Save" button to save your changes.</p>
+        <br>
+        <div id="Location">
+            <h2>Location</h2>
+            <p>Set the location, you want weather data from</p>
+            <label for="location">Location:</label>
+            <input type="text" id="location" name="location" enabled>
+            <br>
+            <br>
+            <label for="use-ip-location">Use IP Location</label>
+            <input type="checkbox" id="use-ip-location" name="use-ip-location" unchecked>
+        </div>
+        <br>
+        <br>
+        <div id="Widgets">
+            <h2>Widgets</h2>    
+            <p>By pressing the checkboxes in front of the widgets, you can add them to your dashboard.<br>
+            Star a widget to feature it on your dashboard.</p>
+            <ul id="widgets-list">
+                <li>
+                    <input type="checkbox" id="weather-widget" name="weather-widget">
+                    <label for="weather-widget">Weather</label>
+                    <input type="checkbox" id="weather-widget-star" name="weather-widget-star" class="star-checkbox">
+                </li>
+                <li>
+                    <input type="checkbox" id="notifications-widget" name="notifications-widget">
+                    <label for="notifications-widget">Notifications</label>
+                    <input type="checkbox" id="notifications-widget-star" name="notifications-widget-star" class="star-checkbox">
+                </li>
+                <li>
+                    <input type="checkbox" id="date-time-widget" name="date-time-widget">
+                    <label for="date-time-widget">Date and Time</label>
+                    <input type="checkbox" id="date-time-widget-star" name="date-time-widget-star" class="star-checkbox">
+                </li>
+                <li>
+                    <input type="checkbox" id="countdown-widget" name="countdown-widget">
+                    <label for="countdown-widget">Countdown to Date</label>
+                    <input type="checkbox" id="countdown-widget-star" name="countdown-widget-star" class="star-checkbox">
+                </li>
+                <li>
+                    <input type="checkbox" id="calendar-widget" name="calendar-widget">
+                    <label for="calendar-widget">Calendar</label>
+                    <input type="checkbox" id="calendar-widget-star" name="calendar-widget-star" class="star-checkbox">
+                </li>
+                <li>
+                    <input type="checkbox" id="stock-crypto-widget" name="stock-crypto-widget">
+                    <label for="stock-crypto-widget">Stock/Crypto Prices</label>
+                    <input type="checkbox" id="stock-crypto-widget-star" name="stock-crypto-widget-star" class="star-checkbox">
+                </li>
+            </ul>
+        </div>
+        <button id="save-settings-btn" class="btn">Save Settings</button>
+    </section>
+    <section id="About-me"> 
+        <p>test</p>
     </section>
     <script src="script.js"></script>
 </body>
