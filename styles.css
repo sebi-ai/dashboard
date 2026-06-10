@@ -34,3 +34,14 @@
   transform: scale(0.98);
   transition: all 0.05s ease-in-out;
 }
+
+
+#head {
+  height: 80px;
+  display: flex;
+  justify-content: center;  
+  align-items: top;       
+  gap: 40px;
+  border: 5px solid black;
+  border-radius: 30px;           
+}
