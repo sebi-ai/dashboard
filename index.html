@@ -39,54 +39,54 @@
         <h1>Settings</h1>
         <p>Adjust your dashboard as you want it, then press the "Save" button to save your changes.</p>
         <br>
-        <div id="Location">
-            <h2>Location</h2>
-            <p>Set the location, you want weather data from</p>
-            <label for="location">Location:</label>
-            <input type="text" id="location" name="location" enabled>
-            <br>
-            <br>
-            <label for="use-ip-location">Use IP Location</label>
-            <input type="checkbox" id="use-ip-location" name="use-ip-location" unchecked>
-        </div>
-        <br>
-        <br>
-        <div id="Widgets">
-            <h2>Widgets</h2>    
-            <p>By pressing the checkboxes in front of the widgets, you can add them to your dashboard.<br>
-            Star a widget to feature it on your dashboard.</p>
-            <ul id="widgets-list">
-                <li>
-                    <input type="checkbox" id="weather-widget" name="weather-widget">
-                    <label for="weather-widget">Weather</label>
-                    <input type="checkbox" id="weather-widget-star" name="weather-widget-star" class="star-checkbox">
-                </li>
-                <li>
-                    <input type="checkbox" id="notifications-widget" name="notifications-widget">
-                    <label for="notifications-widget">Notifications</label>
-                    <input type="checkbox" id="notifications-widget-star" name="notifications-widget-star" class="star-checkbox">
-                </li>
-                <li>
-                    <input type="checkbox" id="date-time-widget" name="date-time-widget">
-                    <label for="date-time-widget">Date and Time</label>
-                    <input type="checkbox" id="date-time-widget-star" name="date-time-widget-star" class="star-checkbox">
-                </li>
-                <li>
-                    <input type="checkbox" id="countdown-widget" name="countdown-widget">
-                    <label for="countdown-widget">Countdown to Date</label>
-                    <input type="checkbox" id="countdown-widget-star" name="countdown-widget-star" class="star-checkbox">
-                </li>
-                <li>
-                    <input type="checkbox" id="calendar-widget" name="calendar-widget">
-                    <label for="calendar-widget">Calendar</label>
-                    <input type="checkbox" id="calendar-widget-star" name="calendar-widget-star" class="star-checkbox">
-                </li>
-                <li>
-                    <input type="checkbox" id="stock-crypto-widget" name="stock-crypto-widget">
-                    <label for="stock-crypto-widget">Stock/Crypto Prices</label>
-                    <input type="checkbox" id="stock-crypto-widget-star" name="stock-crypto-widget-star" class="star-checkbox">
-                </li>
-            </ul>
+        <div id="settings-sections">
+            <div id="Location" class="settings-section">
+                <h2>Location</h2>
+                <p>Set the location, you want weather data from</p>
+                <label for="location">Location:</label>
+                <input type="text" id="location" name="location" enabled>
+                <br>
+                <br>
+                <label for="use-ip-location">Use IP Location</label>
+                <input type="checkbox" id="use-ip-location" name="use-ip-location" unchecked>
+            </div>
+            <div id="Widgets" class="settings-section">
+                <h2>Widgets</h2>    
+                <p>By pressing the checkboxes in front of the widgets, you can add them to your dashboard.<br>
+                Your dashboard fits up to 3 widgets. Star one to make it bigger. You have to star a least one widget to be able to save your settings.</p>
+                <ul id="widgets-list">
+                    <li>
+                        <input type="checkbox" id="weather-widget" name="weather-widget" class="limited-checkbox">
+                        <label for="weather-widget">Weather</label>
+                        <input type="radio" id="weather-widget-star" name="widget-star" class="star-checkbox" disabled>
+                    </li>
+                    <li>
+                        <input type="checkbox" id="notifications-widget" name="notifications-widget" class="limited-checkbox">
+                        <label for="notifications-widget">Notifications</label>
+                        <input type="radio" id="notifications-widget-star" name="widget-star" class="star-checkbox" disabled>
+                    </li>
+                    <li>
+                        <input type="checkbox" id="date-time-widget" name="date-time-widget" class="limited-checkbox">
+                        <label for="date-time-widget">Date and Time</label>
+                        <input type="radio" id="date-time-widget-star" name="widget-star" class="star-checkbox" disabled>
+                    </li>
+                    <li>
+                        <input type="checkbox" id="countdown-widget" name="countdown-widget" class="limited-checkbox">
+                        <label for="countdown-widget">Countdown to Date</label>
+                        <input type="radio" id="countdown-widget-star" name="widget-star" class="star-checkbox" disabled>
+                    </li>
+                    <li>
+                        <input type="checkbox" id="calendar-widget" name="calendar-widget" class="limited-checkbox">
+                        <label for="calendar-widget">Calendar</label>
+                        <input type="radio" id="calendar-widget-star" name="widget-star" class="star-checkbox" disabled>
+                    </li>
+                    <li>
+                        <input type="checkbox" id="stock-crypto-widget" name="stock-crypto-widget" class="limited-checkbox">
+                        <label for="stock-crypto-widget">Stock/Crypto Prices</label>
+                        <input type="radio" id="stock-crypto-widget-star" name="widget-star" class="star-checkbox" disabled>
+                    </li>
+                </ul>
+            </div>
         </div>
         <button id="save-settings-btn" class="btn">Save Settings</button>
     </section>

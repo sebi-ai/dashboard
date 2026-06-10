@@ -10,6 +10,13 @@
   display: none;
 }
 
+#settings-sections {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
 #About-me {
   display: none;
 }
@@ -52,6 +59,7 @@
   gap: 40px;
   border: 2px solid rgb(4, 4, 192);
   border-radius: 30px;  
+  margin-top: 20px;
 }
 
 p, ul, ol, input, label {
@@ -72,7 +80,8 @@ p, ul, ol, input, label {
   height: 250px;
   padding-top: 20px;
   padding-left: 20px;
-  width: 400px;
+  width: auto;
+  flex: 1 1 320px;
 }
 
 #Widgets {
@@ -80,8 +89,11 @@ p, ul, ol, input, label {
   border-radius: 50px;
   padding-top: 20px;
   padding-left: 20px;
-  width: 750px;
-  height: 350px;
+  padding-bottom: 20px;
+  width: auto;
+  flex: 2 1 520px;
+  min-height: 350px;
+  height: auto;
   margin-bottom: 50px;
 }
 
@@ -100,12 +112,29 @@ input[type="checkbox"] {
 #widgets-list {
   list-style-type: none;
   padding-left: 0px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 20px;
+  padding-bottom: 3px;
+  margin: 0;
+}
+
+#widgets-list li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+#widgets-list label {
+  flex: 1;
 }
 
 .star-checkbox {
   appearance: none;
-  width: 40px;
-  height: 40px;
+  width: 30px;
+  height: 30px;
   background-color: gray;
   cursor: pointer;
   clip-path: polygon(
@@ -117,4 +146,16 @@ input[type="checkbox"] {
 
 .star-checkbox:checked {
   background-color: gold;
+}
+
+input, textarea {
+  user-select: text;
+}
+
+* {
+  user-select: none;
+}
+
+input, textarea {
+  user-select: text;
 }
