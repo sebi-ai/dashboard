@@ -69,3 +69,45 @@ widgetCheckboxes.forEach(widgetCheckbox => {
 });
 
 syncWidgetStars();
+
+document.getElementById("save-settings-btn").addEventListener("click", async function() {
+    const settings = {
+        location:      document.getElementById("location").value,
+        useIpLocation: document.getElementById("use-ip-location").checked,
+
+        widgets: {
+            weather:       document.getElementById("weather-widget").checked,
+            notifications: document.getElementById("notifications-widget").checked,
+            dateTime:      document.getElementById("date-time-widget").checked,
+            countdown:     document.getElementById("countdown-widget").checked,
+            calendar:      document.getElementById("calendar-widget").checked,
+            stockCrypto:   document.getElementById("stock-crypto-widget").checked,
+        },
+
+        starredWidget: document.querySelector('input[name="widget-star"]:checked')?.id ?? null,
+        theme:         document.getElementById("theme-select").value,
+        customColor:   document.getElementById("custom-color").value,
+    };
+
+    try {
+        await fetch("http://localhost:8000/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(settings)
+        });
+        showAlert();
+    } catch (error) {
+        showAlert();
+        console.error("Server nicht erreichbar:", error);
+    }
+});
+
+function showAlert() {
+    document.getElementById("settings-saved-alert").style.display = "block";
+
+    setTimeout(closeAlert, 2500);
+}
+
+function closeAlert() {
+    document.getElementById("settings-saved-alert").style.display = "none";
+}

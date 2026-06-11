@@ -7,6 +7,9 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <div id="settings-saved-alert">
+        <p id="settings-saved-alert-text">Settings saved successfully!</p>
+    </div>
     <div id="head">
         <button class="btn" id="home-btn">Home</button>
         <button id="redirect-start-btn" class="btn">Open Dashboard</button>
@@ -86,6 +89,22 @@
                         <input type="radio" id="stock-crypto-widget-star" name="widget-star" class="star-checkbox" disabled>
                     </li>
                 </ul>
+            </div>
+            <div id="theme" class="settings-section">
+                <h2>Theme</h2>
+                <p>Choose one of the preset themes for your dashboard:</p>
+                <label for="theme-select">Select Theme:</label>
+                <select id="theme-select" name="theme-select">
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="blue">Blue</option>
+                    <option value="green">Green</option>
+                    <option value="red">Red</option>
+                    <option value="pink">Pink</option>
+                    <option value="purple">Purple</option>
+                </select>
+                <p>Or choose your own color:</p>
+                <input type="color" id="custom-color" name="custom-color" value="#0000ff">
             </div>
         </div>
         <button id="save-settings-btn" class="btn">Save Settings</button>
