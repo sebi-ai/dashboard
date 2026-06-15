@@ -266,3 +266,34 @@ input[type="color"]::-moz-color-swatch    { border: none; border-radius: 8px; }
   font-weight: bold;
   color: rgb(4, 4, 192);
 }
+
+#location-suggestions {
+    list-style: none;
+    padding: 0;
+    margin: 20px;
+    margin-bottom: 20px;
+    border: 2px solid rgb(4, 4, 192);
+    max-height: 200px;
+    overflow-y: auto;
+    position: absolute;
+    background: white;
+    width: 20%;
+    z-index: 999;
+}
+
+#location-suggestions li {
+    padding: 8px;
+    cursor: pointer;
+}
+
+#location-suggestions li:hover {
+    background-color: #f0f0f0;
+}
+
+#location-suggestions {
+    display: none;
+}
+
+#location-suggestions:not(:empty) {
+    display: block;
+}

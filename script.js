@@ -1,28 +1,91 @@
+async function loadSettings() {
+    try {
+        const res = await fetch("http://localhost:8000/load");
+        if (!res.ok) return;
+        const s = await res.json();
+
+        if (s.location)      document.getElementById("location").value = s.location;
+        if (s.useIpLocation) {
+            document.getElementById("use-ip-location").checked = true;
+            document.getElementById("location").disabled = true;
+        }
+
+        if (s.widgets) {
+            for (const [key, value] of Object.entries(s.widgets)) {
+                const map = {
+                    weather: "weather-widget", notifications: "notifications-widget",
+                    dateTime: "date-time-widget", countdown: "countdown-widget",
+                    calendar: "calendar-widget", stockCrypto: "stock-crypto-widget"
+                };
+                if (map[key]) document.getElementById(map[key]).checked = value;
+            }
+            syncWidgetStars();
+        }
+
+        if (s.starredWidget) {
+            const star = document.getElementById(s.starredWidget);
+            if (star) star.checked = true;
+        }
+
+        if (s.theme)       document.getElementById("theme-select").value = s.theme;
+        if (s.customColor) document.getElementById("custom-color").value = s.customColor;
+
+    } catch (e) {
+        console.log("No saved settings found.");
+    }
+}
+
+async function getCoordinates(locationName) {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=1`;
+    const res = await fetch(url, {
+        headers: { "Accept-Language": "en" }
+    });
+    const data = await res.json();
+
+    if (data.length === 0) return null;
+
+    return {
+        lat: data[0].lat,
+        lon: data[0].lon,
+        displayName: data[0].display_name
+    };
+}
+
+async function getIpLocation() {
+    const res = await fetch("https://ipapi.co/json/");
+    const data = await res.json();
+    return {
+        lat: data.latitude,
+        lon: data.longitude,
+        displayName: data.city + ", " + data.country_name
+    };
+}
+
 function showSection(sectionId) {
-  document.getElementById("home").style.display = sectionId === "home" ? "block" : "none";
-  document.getElementById("dashboard").style.display = sectionId === "dashboard" ? "flex" : "none";
-  document.getElementById("settings").style.display = sectionId === "settings" ? "block" : "none";
-  document.getElementById("About-me").style.display = sectionId === "about" ? "block" : "none";
+    document.getElementById("home").style.display = sectionId === "home" ? "block" : "none";
+    document.getElementById("dashboard").style.display = sectionId === "dashboard" ? "flex" : "none";
+    document.getElementById("settings").style.display = sectionId === "settings" ? "block" : "none";
+    document.getElementById("About-me").style.display = sectionId === "about" ? "block" : "none";
 }
 
 document.getElementById("redirect-start-btn").addEventListener("click", function(e) {
-  e.preventDefault();
-  showSection("dashboard");
+    e.preventDefault();
+    showSection("dashboard");
 });
 
 document.getElementById("home-btn").addEventListener("click", function(e) {
-  e.preventDefault();
-  showSection("home");
+    e.preventDefault();
+    showSection("home");
 });
 
 document.getElementById("settings-btn").addEventListener("click", function(e) {
-  e.preventDefault();
-  showSection("settings");
+    e.preventDefault();
+    showSection("settings");
 });
 
 document.getElementById("about-btn").addEventListener("click", function(e) {
-  e.preventDefault();
-  showSection("about");
+    e.preventDefault();
+    showSection("about");
 });
 
 showSection("home");
@@ -30,50 +93,124 @@ showSection("home");
 const checkbox = document.getElementById("use-ip-location");
 const textfeld = document.getElementById("location");
 checkbox.addEventListener("change", function() {
-  textfeld.disabled = checkbox.checked;
+    textfeld.disabled = checkbox.checked;
 });
 
-const checkboxes = document.querySelectorAll('.limited-checkbox'); 
+const checkboxes = document.querySelectorAll('.limited-checkbox');
 
 checkboxes.forEach(checkbox => {
-  checkbox.addEventListener('change', () => {
-    const checked = document.querySelectorAll('.limited-checkbox:checked');
-
-    if (checked.length > 3) { 
-      checkbox.checked = false;
-    }
-  });
+    checkbox.addEventListener('change', () => {
+        const checked = document.querySelectorAll('.limited-checkbox:checked');
+        if (checked.length > 3) {
+            checkbox.checked = false;
+        }
+    });
 });
 
 const widgetCheckboxes = document.querySelectorAll('#widgets-list .limited-checkbox');
 
 function syncWidgetStars() {
-  widgetCheckboxes.forEach(widgetCheckbox => {
-    const widgetItem = widgetCheckbox.closest('li');
-    const starButton = widgetItem ? widgetItem.querySelector('.star-checkbox') : null;
+    widgetCheckboxes.forEach(widgetCheckbox => {
+        const widgetItem = widgetCheckbox.closest('li');
+        const starButton = widgetItem ? widgetItem.querySelector('.star-checkbox') : null;
 
-    if (!starButton) {
-      return;
-    }
+        if (!starButton) return;
 
-    starButton.disabled = !widgetCheckbox.checked;
+        starButton.disabled = !widgetCheckbox.checked;
 
-    if (!widgetCheckbox.checked) {
-      starButton.checked = false;
-    }
-  });
+        if (!widgetCheckbox.checked) {
+            starButton.checked = false;
+        }
+    });
 }
 
 widgetCheckboxes.forEach(widgetCheckbox => {
-  widgetCheckbox.addEventListener('change', syncWidgetStars);
+    widgetCheckbox.addEventListener('change', syncWidgetStars);
 });
 
 syncWidgetStars();
+loadSettings();
+
+// Location Autocomplete
+const locationInput = document.getElementById("location");
+const suggestionsList = document.getElementById("location-suggestions");
+let debounceTimer;
+
+locationInput.addEventListener("input", function() {
+    clearTimeout(debounceTimer);
+    const query = locationInput.value.trim();
+
+    if (query.length < 3) {
+        suggestionsList.innerHTML = "";
+        return;
+    }
+
+    debounceTimer = setTimeout(async () => {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`;
+        const res = await fetch(url, { headers: { "Accept-Language": "en" } });
+        const data = await res.json();
+
+        suggestionsList.innerHTML = "";
+        data.forEach(place => {
+            const li = document.createElement("li");
+            li.textContent = place.display_name;
+            li.addEventListener("click", function() {
+                locationInput.value = place.display_name;
+                suggestionsList.innerHTML = "";
+            });
+            suggestionsList.appendChild(li);
+        });
+    }, 400);
+});
+
+document.addEventListener("click", function(e) {
+    if (e.target !== locationInput) {
+        suggestionsList.innerHTML = "";
+    }
+});
 
 document.getElementById("save-settings-btn").addEventListener("click", async function() {
+
+    const checked = document.querySelectorAll('.limited-checkbox:checked');
+    const starred = document.querySelector('input[name="widget-star"]:checked');
+    const location = document.getElementById("location").value;
+    const useIp = document.getElementById("use-ip-location").checked;
+
+    if (checked.length === 0) {
+        alert("Please select at least one widget.");
+        return;
+    }
+
+    if (!starred) {
+        alert("Please star at least one widget.");
+        return;
+    }
+
+    if (!useIp && location.trim() === "") {
+        alert("Please enter a location or enable IP location.");
+        return;
+    }
+
+    let coords = null;
+    if (useIp) {
+        try {
+            coords = await getIpLocation();
+        } catch (e) {
+            alert("Could not determine IP location.");
+            return;
+        }
+    } else {
+        coords = await getCoordinates(location);
+        if (!coords) {
+            alert("Location not found. Please try a different name.");
+            return;
+        }
+    }
+
     const settings = {
-        location:      document.getElementById("location").value,
-        useIpLocation: document.getElementById("use-ip-location").checked,
+        location:      location,
+        coordinates:   coords,
+        useIpLocation: useIp,
 
         widgets: {
             weather:       document.getElementById("weather-widget").checked,
@@ -97,14 +234,12 @@ document.getElementById("save-settings-btn").addEventListener("click", async fun
         });
         showAlert();
     } catch (error) {
-        showAlert();
-        console.error("Server nicht erreichbar:", error);
+        console.error("Server not reachable:", error);
     }
 });
 
 function showAlert() {
     document.getElementById("settings-saved-alert").style.display = "block";
-
     setTimeout(closeAlert, 2500);
 }
 

@@ -48,6 +48,7 @@
                 <p>Set the location, you want weather data from</p>
                 <label for="location">Location:</label>
                 <input type="text" id="location" name="location" enabled>
+                <ul id="location-suggestions"></ul>
                 <br>
                 <br>
                 <label for="use-ip-location">Use IP Location</label>
@@ -95,6 +96,7 @@
                 <p>Choose one of the preset themes for your dashboard:</p>
                 <label for="theme-select">Select Theme:</label>
                 <select id="theme-select" name="theme-select">
+                    <option value="">Choose a theme</option>
                     <option value="light">Light</option>
                     <option value="dark">Dark</option>
                     <option value="blue">Blue</option>
