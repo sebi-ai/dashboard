@@ -87,7 +87,7 @@ document.getElementById("settings-btn").addEventListener("click", function(e) {
 
 document.getElementById("about-btn").addEventListener("click", function(e) {
     e.preventDefault();
-    showSection("about");
+window.location.href = "about.html";
 });
 
 showSection("home");
