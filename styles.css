@@ -243,28 +243,56 @@ input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
 input[type="color"]::-webkit-color-swatch { border: none; border-radius: 8px; }
 input[type="color"]::-moz-color-swatch    { border: none; border-radius: 8px; }
 
-#settings-saved-alert {
-    display: none;
-    position: fixed;   
-    top: 20px; 
-    right: 8.2px;
-    transform: none;  
-    background: rgb(255, 255, 255);
-    border: 2px solid rgb(4, 4, 192);
-    border-radius: 25px;
-    padding: 24px;
-    height: auto;
-    min-height: 50px;
-    width: auto;
-    min-width: 350px;
-    z-index: 9999;
-    text-align: center;
+.site-notification {
+  position: fixed;
+  top: 22px;
+  right: 22px;
+  display: none;
+  align-items: flex-start;
+  gap: 14px;
+  max-width: min(420px, calc(100vw - 44px));
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 2px solid rgb(4, 4, 192);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 40px rgba(4, 4, 192, 0.16);
+  z-index: 9999;
 }
 
-#settings-saved-alert-text {
-  font-size: 25px;
-  font-weight: bold;
+.site-notification[data-type="success"] {
+  border-color: rgb(4, 4, 192);
+}
+
+.site-notification[data-type="error"] {
+  border-color: rgb(4, 4, 192);
+}
+
+.site-notification[data-type="info"] {
+  border-color: rgb(4, 4, 192);
+}
+
+.site-notification-visible {
+  display: flex;
+  animation: notification-slide-in 180ms ease-out;
+}
+
+.site-notification__text {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
   color: rgb(4, 4, 192);
+  line-height: 1.4;
+}
+
+@keyframes notification-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 #location-suggestions {
@@ -297,3 +325,8 @@ input[type="color"]::-moz-color-swatch    { border: none; border-radius: 8px; }
 #location-suggestions:not(:empty) {
     display: block;
 }
+
+
+.site-notification--success { border-color: rgb(4, 4, 192); }
+.site-notification--error   { border-color: rgb(4, 4, 192); }
+.site-notification--info    { border-color: rgb(4, 4, 192); }

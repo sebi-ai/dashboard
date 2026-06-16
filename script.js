@@ -1,6 +1,8 @@
+const API_BASE = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
+
 async function loadSettings() {
     try {
-        const res = await fetch("http://localhost:8000/load");
+        const res = await fetch(`${API_BASE}/load`);
         if (!res.ok) return;
         const s = await res.json();
 
@@ -131,6 +133,24 @@ widgetCheckboxes.forEach(widgetCheckbox => {
 syncWidgetStars();
 loadSettings();
 
+const notification = document.getElementById("site-notification");
+const notificationText = notification.querySelector(".site-notification__text");
+let notificationTimer;
+
+function showNotification(message, type = "info") {
+    clearTimeout(notificationTimer);
+
+    notificationText.textContent = message;
+
+    notification.className = "site-notification";
+    notification.classList.add("site-notification-visible");
+    notification.classList.add(`site-notification--${type}`);
+
+    notificationTimer = setTimeout(() => {
+        notification.className = "site-notification";
+    }, 3000);
+}
+
 // Location Autocomplete
 const locationInput = document.getElementById("location");
 const suggestionsList = document.getElementById("location-suggestions");
@@ -177,17 +197,17 @@ document.getElementById("save-settings-btn").addEventListener("click", async fun
     const useIp = document.getElementById("use-ip-location").checked;
 
     if (checked.length === 0) {
-        alert("Please select at least one widget.");
+        showNotification("Please select at least one widget.", "error");
         return;
     }
 
     if (!starred) {
-        alert("Please star at least one widget.");
+        showNotification("Please star at least one widget.", "error");
         return;
     }
 
     if (!useIp && location.trim() === "") {
-        alert("Please enter a location or enable IP location.");
+        showNotification("Please enter a location or enable IP location.", "error");
         return;
     }
 
@@ -196,13 +216,13 @@ document.getElementById("save-settings-btn").addEventListener("click", async fun
         try {
             coords = await getIpLocation();
         } catch (e) {
-            alert("Could not determine IP location.");
+            showNotification("Could not determine IP location.", "error");
             return;
         }
     } else {
         coords = await getCoordinates(location);
         if (!coords) {
-            alert("Location not found. Please try a different name.");
+            showNotification("Location not found. Please try a different name.", "error");
             return;
         }
     }
@@ -227,22 +247,21 @@ document.getElementById("save-settings-btn").addEventListener("click", async fun
     };
 
     try {
-        await fetch("http://localhost:8000/save", {
+        const res = await fetch(`${API_BASE}/save`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(settings)
         });
-        showAlert();
+
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => null);
+            showNotification(errorData?.error ?? "Settings could not be saved.", "error");
+            return;
+        }
+
+        showNotification("Settings saved successfully.", "success");
     } catch (error) {
         console.error("Server not reachable:", error);
+        showNotification("Server not reachable. Settings were not saved.", "error");
     }
 });
-
-function showAlert() {
-    document.getElementById("settings-saved-alert").style.display = "block";
-    setTimeout(closeAlert, 2500);
-}
-
-function closeAlert() {
-    document.getElementById("settings-saved-alert").style.display = "none";
-}
