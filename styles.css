@@ -257,20 +257,8 @@ input[type="color"]::-moz-color-swatch    { border: none; border-radius: 8px; }
   border-radius: 30px;
   border: 2px solid rgb(4, 4, 192);
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: 10px 10px 40px rgb(4, 4, 192);
+  box-shadow: 7px 7px 30px rgb(4, 4, 192);
   z-index: 9999;
-}
-
-.site-notification[data-type="success"] {
-  border-color: rgb(4, 4, 192);
-}
-
-.site-notification[data-type="error"] {
-  border-color: rgb(4, 4, 192);
-}
-
-.site-notification[data-type="info"] {
-  border-color: rgb(4, 4, 192);
 }
 
 .site-notification-visible {
@@ -280,17 +268,21 @@ input[type="color"]::-moz-color-swatch    { border: none; border-radius: 8px; }
 
 .site-notification__text {
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 25px;
   color: rgb(4, 4, 192);
   line-height: 1.4;
+  font-family: "Orbitron", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-style: normal;
 }
+
 
 @keyframes notification-slide-in {
   from {
     opacity: 0;
     transform: translateY(-10px);
-  }
+  } 
   to {
     opacity: 1;
     transform: translateY(0);
