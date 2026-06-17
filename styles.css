@@ -246,17 +246,18 @@ input[type="color"]::-moz-color-swatch    { border: none; border-radius: 8px; }
 
 .site-notification {
   position: fixed;
-  top: 22px;
-  right: 22px;
+  top: 20px;
+  right: 8px;
   display: none;
   align-items: flex-start;
   gap: 14px;
-  max-width: min(420px, calc(100vw - 44px));
+  max-width: min(560px, calc(100vw - 44px));
+  height: 84px;
   padding: 18px 20px;
-  border-radius: 22px;
+  border-radius: 30px;
   border: 2px solid rgb(4, 4, 192);
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 18px 40px rgba(4, 4, 192, 0.16);
+  box-shadow: 10px 10px 40px rgb(4, 4, 192);
   z-index: 9999;
 }
 
@@ -341,5 +342,4 @@ border-color: rgb(4, 4, 192);
 
 #countdown-window {
   display: none;
-  color: green;
 }

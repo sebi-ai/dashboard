@@ -64,10 +64,37 @@ async function getIpLocation() {
 }
 
 function showSection(sectionId) {
-    document.getElementById("home").style.display = sectionId === "home" ? "block" : "none";
-    document.getElementById("dashboard").style.display = sectionId === "dashboard" ? "flex" : "none";
-    document.getElementById("settings").style.display = sectionId === "settings" ? "block" : "none";
-    document.getElementById("About-me").style.display = sectionId === "about" ? "block" : "none";
+    const homeSection = document.getElementById("home");
+    const dashboardSection = document.getElementById("dashboard");
+    const settingsSection = document.getElementById("settings");
+    const aboutSection = document.getElementById("About-me");
+
+    if (homeSection) homeSection.style.display = sectionId === "home" ? "block" : "none";
+    if (dashboardSection) dashboardSection.style.display = sectionId === "dashboard" ? "flex" : "none";
+    if (settingsSection) settingsSection.style.display = sectionId === "settings" ? "block" : "none";
+    if (aboutSection) aboutSection.style.display = sectionId === "about" ? "block" : "none";
+}
+
+function goHome() {
+    const homeSection = document.getElementById("home");
+
+    if (homeSection) {
+        showSection("home");
+        window.location.hash = "home";
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+    }
+
+    window.location.href = "/index.html#home";
+}
+
+function initializeHomeView() {
+    if (!document.getElementById("home")) {
+        return;
+    }
+
+    showSection("home");
+    window.scrollTo(0, 0);
 }
 
 document.getElementById("redirect-start-btn").addEventListener("click", function(e) {
@@ -77,7 +104,7 @@ document.getElementById("redirect-start-btn").addEventListener("click", function
 
 document.getElementById("home-btn").addEventListener("click", function(e) {
     e.preventDefault();
-    showSection("home");
+    goHome();
 });
 
 document.getElementById("settings-btn").addEventListener("click", function(e) {
@@ -92,9 +119,11 @@ window.location.href = "/about.html";
 
 const checkbox = document.getElementById("use-ip-location");
 const textfeld = document.getElementById("location");
-checkbox.addEventListener("change", function() {
-    textfeld.disabled = checkbox.checked;
-});
+if (checkbox && textfeld) {
+    checkbox.addEventListener("change", function() {
+        textfeld.disabled = checkbox.checked;
+    });
+}
 
 const checkboxes = document.querySelectorAll('.limited-checkbox');
 
@@ -129,7 +158,11 @@ widgetCheckboxes.forEach(widgetCheckbox => {
 });
 
 syncWidgetStars();
-loadSettings();
+if (document.getElementById("location")) {
+    loadSettings();
+}
+
+window.addEventListener("load", initializeHomeView);
 
 const notification = document.getElementById("site-notification");
 const notificationText = notification.querySelector(".site-notification__text");
@@ -154,126 +187,136 @@ const locationInput = document.getElementById("location");
 const suggestionsList = document.getElementById("location-suggestions");
 let debounceTimer;
 
-locationInput.addEventListener("input", function() {
-    clearTimeout(debounceTimer);
-    const query = locationInput.value.trim();
+if (locationInput && suggestionsList) {
+    locationInput.addEventListener("input", function() {
+        clearTimeout(debounceTimer);
+        const query = locationInput.value.trim();
 
-    if (query.length < 3) {
-        suggestionsList.innerHTML = "";
-        return;
-    }
+        if (query.length < 3) {
+            suggestionsList.innerHTML = "";
+            return;
+        }
 
-    debounceTimer = setTimeout(async () => {
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`;
-        const res = await fetch(url, { headers: { "Accept-Language": "en" } });
-        const data = await res.json();
+        debounceTimer = setTimeout(async () => {
+            const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`;
+            const res = await fetch(url, { headers: { "Accept-Language": "en" } });
+            const data = await res.json();
 
-        suggestionsList.innerHTML = "";
-        data.forEach(place => {
-            const li = document.createElement("li");
-            li.textContent = place.display_name;
-            li.addEventListener("click", function() {
-                locationInput.value = place.display_name;
-                suggestionsList.innerHTML = "";
+            suggestionsList.innerHTML = "";
+            data.forEach(place => {
+                const li = document.createElement("li");
+                li.textContent = place.display_name;
+                li.addEventListener("click", function() {
+                    locationInput.value = place.display_name;
+                    suggestionsList.innerHTML = "";
+                });
+                suggestionsList.appendChild(li);
             });
-            suggestionsList.appendChild(li);
-        });
-    }, 400);
-});
+        }, 400);
+    });
 
-document.addEventListener("click", function(e) {
-    if (e.target !== locationInput) {
-        suggestionsList.innerHTML = "";
-    }
-});
+    document.addEventListener("click", function(e) {
+        if (e.target !== locationInput) {
+            suggestionsList.innerHTML = "";
+        }
+    });
+}
 
-document.getElementById("save-settings-btn").addEventListener("click", async function() {
+const saveSettingsBtn = document.getElementById("save-settings-btn");
 
-    const checked = document.querySelectorAll('.limited-checkbox:checked');
-    const starred = document.querySelector('input[name="widget-star"]:checked');
-    const location = document.getElementById("location").value;
-    const useIp = document.getElementById("use-ip-location").checked;
+if (saveSettingsBtn) {
+    saveSettingsBtn.addEventListener("click", async function() {
 
-    if (checked.length === 0) {
-        showNotification("Please select at least one widget.", "error");
-        return;
-    }
+        const checked = document.querySelectorAll('.limited-checkbox:checked');
+        const starred = document.querySelector('input[name="widget-star"]:checked');
+        const location = document.getElementById("location").value;
+        const useIp = document.getElementById("use-ip-location").checked;
 
-    if (!starred) {
-        showNotification("Please star at least one widget.", "error");
-        return;
-    }
+        if (checked.length === 0) {
+            showNotification("Please select at least one widget.", "error");
+            return;
+        }
 
-    if (!useIp && location.trim() === "") {
-        showNotification("Please enter a location or enable IP location.", "error");
-        return;
-    }
+        if (!starred) {
+            showNotification("Please star at least one widget.", "error");
+            return;
+        }
 
-    let coords = null;
-    if (useIp) {
+        if (!useIp && location.trim() === "") {
+            showNotification("Please enter a location or enable IP location.", "error");
+            return;
+        }
+
+        let coords = null;
+        if (useIp) {
+            try {
+                coords = await getIpLocation();
+            } catch (e) {
+                showNotification("Could not determine IP location.", "error");
+                return;
+            }
+        } else {
+            coords = await getCoordinates(location);
+            if (!coords) {
+                showNotification("Location not found. Please try a different name.", "error");
+                return;
+            }
+        }
+        const settings = {
+            location:      location,
+            coordinates:   coords,
+            useIpLocation: useIp,
+
+            widgets: {
+                weather:       document.getElementById("weather-widget").checked,
+                notifications: document.getElementById("notifications-widget").checked,
+                dateTime:      document.getElementById("date-time-widget").checked,
+                countdown:     document.getElementById("countdown-widget").checked,
+                calendar:      document.getElementById("calendar-widget").checked,
+                stockCrypto:   document.getElementById("stock-crypto-widget").checked,
+            },
+
+            starredWidget: document.querySelector('input[name="widget-star"]:checked')?.id ?? null,
+            theme:         document.getElementById("theme-select").value,
+            customColor:   document.getElementById("custom-color").value,
+        };
+
         try {
-            coords = await getIpLocation();
-        } catch (e) {
-            showNotification("Could not determine IP location.", "error");
-            return;
+            const res = await fetch(`${API_BASE}/save`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(settings)
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => null);
+                showNotification(errorData?.error ?? "Settings could not be saved.", "error");
+                return;
+            }
+
+            showNotification("Settings saved successfully.", "success");
+        } catch (error) {
+            console.error("Server not reachable:", error);
+            showNotification("Server not reachable. Settings were not saved.", "error");
         }
-    } else {
-        coords = await getCoordinates(location);
-        if (!coords) {
-            showNotification("Location not found. Please try a different name.", "error");
-            return;
-        }
-    }
+    });
+}
 
-    const settings = {
-        location:      location,
-        coordinates:   coords,
-        useIpLocation: useIp,
+const countdownWidget = document.getElementById("countdown-widget");
+const countdownWindow = document.getElementById("countdown-window");
+const closeCountdown = document.getElementById("close-countdown");
+const countdownDate = document.getElementById("countdown-date");
 
-        widgets: {
-            weather:       document.getElementById("weather-widget").checked,
-            notifications: document.getElementById("notifications-widget").checked,
-            dateTime:      document.getElementById("date-time-widget").checked,
-            countdown:     document.getElementById("countdown-widget").checked,
-            calendar:      document.getElementById("calendar-widget").checked,
-            stockCrypto:   document.getElementById("stock-crypto-widget").checked,
-        },
+if (countdownWidget && countdownWindow) {
+    countdownWidget.addEventListener("change", function() {
+        countdownWindow.style.display = "none";
+    });
+}
 
-        starredWidget: document.querySelector('input[name="widget-star"]:checked')?.id ?? null,
-        theme:         document.getElementById("theme-select").value,
-        customColor:   document.getElementById("custom-color").value,
-    };
-
-    try {
-        const res = await fetch(`${API_BASE}/save`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(settings)
-        });
-
-        if (!res.ok) {
-            const errorData = await res.json().catch(() => null);
-            showNotification(errorData?.error ?? "Settings could not be saved.", "error");
-            return;
-        }
-
-        showNotification("Settings saved successfully.", "success");
-    } catch (error) {
-        console.error("Server not reachable:", error);
-        showNotification("Server not reachable. Settings were not saved.", "error");
-    }
-});
-
-document.getElementById("countdown-widget").addEventListener("change", function() {
-    if (this.checked) {
-        document.getElementById("countdown-window").style.display = "none";
-    } else {
-        document.getElementById("countdown-window").style.display = "none";
-    }
-});
-
-document.getElementById("close-countdown").addEventListener("click", function() {
-    document.getElementById("countdown-window").style.display = "none";
-    document.getElementById("countdown-date").value = "";
-    document.getElementById("countdown-widget").checked = false;
-});
+if (closeCountdown && countdownWindow && countdownDate && countdownWidget) {
+    closeCountdown.addEventListener("click", function() {
+        countdownWindow.style.display = "none";
+        countdownDate.value = "";
+        countdownWidget.checked = false;
+    });
+}
