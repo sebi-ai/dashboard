@@ -72,7 +72,7 @@ function showSection(sectionId) {
 
 document.getElementById("redirect-start-btn").addEventListener("click", function(e) {
     e.preventDefault();
-    showSection("dashboard");
+    window.location.href = "/dashboard.html";
 });
 
 document.getElementById("home-btn").addEventListener("click", function(e) {
@@ -82,15 +82,13 @@ document.getElementById("home-btn").addEventListener("click", function(e) {
 
 document.getElementById("settings-btn").addEventListener("click", function(e) {
     e.preventDefault();
-    showSection("settings");
+    window.location.href = "/settings.html";
 });
 
 document.getElementById("about-btn").addEventListener("click", function(e) {
     e.preventDefault();
-window.location.href = "about.html";
+window.location.href = "/about.html";
 });
-
-showSection("home");
 
 const checkbox = document.getElementById("use-ip-location");
 const textfeld = document.getElementById("location");
@@ -264,4 +262,18 @@ document.getElementById("save-settings-btn").addEventListener("click", async fun
         console.error("Server not reachable:", error);
         showNotification("Server not reachable. Settings were not saved.", "error");
     }
+});
+
+document.getElementById("countdown-widget").addEventListener("change", function() {
+    if (this.checked) {
+        document.getElementById("countdown-window").style.display = "none";
+    } else {
+        document.getElementById("countdown-window").style.display = "none";
+    }
+});
+
+document.getElementById("close-countdown").addEventListener("click", function() {
+    document.getElementById("countdown-window").style.display = "none";
+    document.getElementById("countdown-date").value = "";
+    document.getElementById("countdown-widget").checked = false;
 });

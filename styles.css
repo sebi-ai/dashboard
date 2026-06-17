@@ -60,6 +60,7 @@
   border: 2px solid rgb(4, 4, 192);
   border-radius: 30px;  
   margin-top: 20px;
+  padding: 20px;
 }
 
 p, ul, ol, input, label {
@@ -326,7 +327,19 @@ input[type="color"]::-moz-color-swatch    { border: none; border-radius: 8px; }
     display: block;
 }
 
+.site-notification--success { 
+border-color: rgb(4, 4, 192);
+}
 
-.site-notification--success { border-color: rgb(4, 4, 192); }
-.site-notification--error   { border-color: rgb(4, 4, 192); }
-.site-notification--info    { border-color: rgb(4, 4, 192); }
+.site-notification--error   { 
+border-color: rgb(4, 4, 192);
+}
+
+.site-notification--info    {
+border-color: rgb(4, 4, 192); 
+}
+
+#countdown-window {
+  display: none;
+  color: green;
+}
