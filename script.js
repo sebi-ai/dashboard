@@ -263,22 +263,21 @@ if (saveSettingsBtn) {
             }
         }
         const settings = {
-            location:      location,
-            coordinates:   coords,
-            useIpLocation: useIp,
-
-            widgets: {
-                weather:       document.getElementById("weather-widget").checked,
-                notifications: document.getElementById("notifications-widget").checked,
-                dateTime:      document.getElementById("date-time-widget").checked,
-                countdown:     document.getElementById("countdown-widget").checked,
-                calendar:      document.getElementById("calendar-widget").checked,
-                stockCrypto:   document.getElementById("stock-crypto-widget").checked,
-            },
-
-            starredWidget: document.querySelector('input[name="widget-star"]:checked')?.id ?? null,
-            theme:         document.getElementById("theme-select").value,
-            customColor:   document.getElementById("custom-color").value,
+        location: location,
+        coordinates: coords,
+        useIpLocation: useIp,
+        widgets: {
+            weather: document.getElementById("weather-widget").checked,
+            notifications: document.getElementById("notifications-widget").checked,
+            dateTime: document.getElementById("date-time-widget").checked,
+            countdown: document.getElementById("countdown-widget").checked,
+            calendar: document.getElementById("calendar-widget").checked,
+            stockCrypto: document.getElementById("stock-crypto-widget").checked,
+        },
+    starredWidget: document.querySelector('input[name="widget-star"]:checked')?.id ?? null,
+    theme: document.getElementById("theme-select").value,
+    customColor: document.getElementById("custom-color").value,
+    countdownDate: document.getElementById("countdown-date").value
         };
 
         try {
@@ -304,19 +303,33 @@ if (saveSettingsBtn) {
 
 const countdownWidget = document.getElementById("countdown-widget");
 const countdownWindow = document.getElementById("countdown-window");
-const closeCountdown = document.getElementById("close-countdown");
+const closeCountdown = document.getElementById("save-countdown");
 const countdownDate = document.getElementById("countdown-date");
 
 if (countdownWidget && countdownWindow) {
-    countdownWidget.addEventListener("change", function() {
-        countdownWindow.style.display = "none";
+    countdownWidget.addEventListener("change", function () {
+        if (countdownWidget.checked) {
+            countdownWindow.style.display = "block";
+            countdownDate.focus();
+        } else {
+            countdownWindow.style.display = "none";
+            countdownDate.value = "";
+        }
     });
 }
 
-if (closeCountdown && countdownWindow && countdownDate && countdownWidget) {
-    closeCountdown.addEventListener("click", function() {
+if (countdownWidget && countdownWindow && closeCountdown && countdownDate) {
+    countdownWidget.addEventListener("change", function () {
+        if (countdownWidget.checked) {
+            countdownWindow.style.display = "block";
+            countdownDate.focus();
+        } else {
+            countdownWindow.style.display = "none";
+            countdownDate.value = "";
+        }
+    });
+
+    closeCountdown.addEventListener("click", function () {
         countdownWindow.style.display = "none";
-        countdownDate.value = "";
-        countdownWidget.checked = false;
     });
 }
