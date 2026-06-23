@@ -104,20 +104,7 @@ h1, h2, h3, h4, h5, h6, button {
   margin-bottom: 10px;
 }
 
-#GoogleCalendar {
-  border: 2px solid rgb(0, 2, 131);
-  border-radius: 40px;
-  padding-top: 20px;
-  padding-left: 20px;
-  padding-bottom: 20px;
-  padding-right: 20px;
-  width: auto;
-  min-width: 400px;
-  flex: 1 1 320px;
-  margin-bottom: 50px;
-}
-
-#GoogleCalendar #disconnect-google-calendar-btn {
+#calendar-window #disconnect-google-calendar-btn {
   margin-left: 14px;
 }
 
@@ -374,6 +361,64 @@ border-color: rgb(0, 2, 131);
     z-index: 1000;
     border-radius: 12px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+
+#calendar-window {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 20px;
+    z-index: 1000;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    min-width: 360px;
+    max-width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+#stock-crypto-window {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 20px;
+    z-index: 1000;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    min-width: 360px;
+    max-width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+#stock-crypto-suggestions {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+#stock-crypto-suggestions li {
+    padding: 8px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(0, 2, 131, 0.15);
+}
+
+#stock-crypto-suggestions li:hover {
+    background-color: #f0f0f0;
+}
+
+#stock-crypto-suggestions li .suggestion-type {
+    font-size: 14px;
+    color: rgba(0, 2, 131, 0.6);
+    margin-left: 8px;
 }
 
 html {

@@ -5,6 +5,11 @@ const disconnectBtn = document.getElementById('disconnect-google-calendar-btn');
 const calendarStatus = document.getElementById('calendar-connection-status');
 const eventsList = document.getElementById('calendar-events-list');
 
+// Holds the currently chosen stock/crypto suggestion until "Save" is pressed,
+// or the value restored from settings.json on load.
+// Shape: { type: "stock" | "crypto", symbol: "AAPL", name: "Apple Inc." }
+let stockCryptoSelection = null;
+
 if (connectBtn) {
     connectBtn.addEventListener('click', async () => {
         try {
@@ -128,6 +133,11 @@ async function loadSettings() {
 
         if (s.theme)       document.getElementById("theme-select").value = s.theme;
         if (s.customColor) document.getElementById("custom-color").value = s.customColor;
+
+        if (s.stockCryptoSelection) {
+            stockCryptoSelection = s.stockCryptoSelection;
+            renderStockCryptoSelection();
+        }
 
     } catch (e) {
         console.log("No saved settings found.");
@@ -374,7 +384,8 @@ if (saveSettingsBtn) {
     starredWidget: document.querySelector('input[name="widget-star"]:checked')?.id ?? null,
     theme: document.getElementById("theme-select").value,
     customColor: document.getElementById("custom-color").value,
-    countdownDate: document.getElementById("countdown-date").value
+    countdownDate: document.getElementById("countdown-date").value,
+    stockCryptoSelection: stockCryptoSelection
         };
 
         try {
@@ -434,4 +445,117 @@ if (countdownWidget && countdownWindow && closeCountdown && countdownDate) {
 if (calendarStatus) {
     handleGoogleRedirectParams();
     refreshCalendarStatus();
+}
+
+const calendarWidgetCheckbox = document.getElementById("calendar-widget");
+const calendarWindow = document.getElementById("calendar-window");
+const closeCalendarWindow = document.getElementById("close-calendar-window");
+
+if (calendarWidgetCheckbox && calendarWindow) {
+    calendarWidgetCheckbox.addEventListener("change", function () {
+        if (calendarWidgetCheckbox.checked) {
+            calendarWindow.style.display = "block";
+        } else {
+            calendarWindow.style.display = "none";
+        }
+    });
+}
+
+if (closeCalendarWindow && calendarWindow) {
+    closeCalendarWindow.addEventListener("click", function () {
+        calendarWindow.style.display = "none";
+    });
+}
+
+// --- Stock / Crypto widget ---
+
+const stockCryptoWidgetCheckbox = document.getElementById("stock-crypto-widget");
+const stockCryptoWindow = document.getElementById("stock-crypto-window");
+const closeStockCryptoWindow = document.getElementById("close-stock-crypto-window");
+const stockCryptoSearchInput = document.getElementById("stock-crypto-search");
+const stockCryptoSuggestions = document.getElementById("stock-crypto-suggestions");
+const stockCryptoSelectedBox = document.getElementById("stock-crypto-selected");
+const stockCryptoSelectedLabel = document.getElementById("stock-crypto-selected-label");
+const saveStockCryptoBtn = document.getElementById("save-stock-crypto");
+
+if (stockCryptoWidgetCheckbox && stockCryptoWindow) {
+    stockCryptoWidgetCheckbox.addEventListener("change", function () {
+        if (stockCryptoWidgetCheckbox.checked) {
+            stockCryptoWindow.style.display = "block";
+            if (stockCryptoSearchInput) stockCryptoSearchInput.focus();
+        } else {
+            stockCryptoWindow.style.display = "none";
+        }
+    });
+}
+
+if (closeStockCryptoWindow && stockCryptoWindow) {
+    closeStockCryptoWindow.addEventListener("click", function () {
+        stockCryptoWindow.style.display = "none";
+    });
+}
+
+function renderStockCryptoSelection() {
+    if (!stockCryptoSelectedBox || !stockCryptoSelectedLabel) return;
+    if (stockCryptoSelection) {
+        const typeLabel = stockCryptoSelection.type === "crypto" ? "Crypto" : "Stock";
+        stockCryptoSelectedLabel.textContent = `${stockCryptoSelection.name} (${stockCryptoSelection.symbol}) — ${typeLabel}`;
+        stockCryptoSelectedBox.style.display = "block";
+    } else {
+        stockCryptoSelectedBox.style.display = "none";
+    }
+}
+
+let stockCryptoDebounceTimer;
+
+if (stockCryptoSearchInput && stockCryptoSuggestions) {
+    stockCryptoSearchInput.addEventListener("input", function () {
+        clearTimeout(stockCryptoDebounceTimer);
+        const query = stockCryptoSearchInput.value.trim();
+
+        if (query.length < 1) {
+            stockCryptoSuggestions.innerHTML = "";
+            return;
+        }
+
+        stockCryptoDebounceTimer = setTimeout(async () => {
+            try {
+                const res = await fetch(`${API_BASE}/finance/search?q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+
+                stockCryptoSuggestions.innerHTML = "";
+                (data.results || []).forEach(result => {
+                    const li = document.createElement("li");
+                    const typeLabel = result.type === "crypto" ? "Crypto" : "Stock";
+                    li.textContent = `${result.name} (${result.symbol})`;
+
+                    const typeSpan = document.createElement("span");
+                    typeSpan.className = "suggestion-type";
+                    typeSpan.textContent = typeLabel;
+                    li.appendChild(typeSpan);
+
+                    li.addEventListener("click", function () {
+                        stockCryptoSelection = {
+                            type: result.type,
+                            symbol: result.symbol,
+                            name: result.name,
+                        };
+                        renderStockCryptoSelection();
+                        stockCryptoSearchInput.value = "";
+                        stockCryptoSuggestions.innerHTML = "";
+                    });
+
+                    stockCryptoSuggestions.appendChild(li);
+                });
+            } catch (e) {
+                stockCryptoSuggestions.innerHTML = "<li>Server not reachable.</li>";
+            }
+        }, 400);
+    });
+}
+
+if (saveStockCryptoBtn && stockCryptoWindow) {
+    saveStockCryptoBtn.addEventListener("click", function () {
+        stockCryptoWindow.style.display = "none";
+    });
 }

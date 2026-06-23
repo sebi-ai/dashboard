@@ -10,22 +10,33 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div id="GoogleCalendar" class="settings-section">
-        <h2>Google Calendar</h2>
-        <p>Connect your Google account to show upcoming events in the Calendar widget.</p>
-        <p>Status: <span id="calendar-connection-status">Checking…</span></p>
-        <button type="button" id="connect-google-calendar-btn" class="btn">Connect Google Calendar</button>
-        <button type="button" id="disconnect-google-calendar-btn" class="btn" style="display:none;">Disconnect</button>
-        <div id="calendar-events-box">
-        <h3>Upcoming events</h3>
-        <ul id="calendar-events-list"></ul>
-    </div>
     <div id="countdown-window">
         <p>Choose the date you want to count down to:</p>
         <input type="date" id="countdown-date">
         <br>
         <br>
         <button class="btn" id="save-countdown">Save</button>
+    </div>
+    <div id="calendar-window">
+        <p>Connect your Google account to show upcoming events in the Calendar widget.</p>
+        <p>Status: <span id="calendar-connection-status">Checking…</span></p>
+        <button type="button" id="connect-google-calendar-btn" class="btn">Connect Google Calendar</button>
+        <button type="button" id="disconnect-google-calendar-btn" class="btn" style="display:none;">Disconnect</button>
+        <div id="calendar-events-box">
+            <h3>Upcoming events</h3>
+            <ul id="calendar-events-list"></ul>
+        </div>
+        <br>
+        <button class="btn" id="close-calendar-window">Close</button>
+    </div>
+    <div id="stock-crypto-window">
+        <p>Choose a stock or a cryptocurrency to display:</p>
+        <input type="text" id="stock-crypto-search" placeholder="e.g. Apple or Bitcoin" autocomplete="off">
+        <ul id="stock-crypto-suggestions"></ul>
+        <p id="stock-crypto-selected" style="display:none;">Selected: <strong id="stock-crypto-selected-label"></strong></p>
+        <br>
+        <button class="btn" id="save-stock-crypto">Save</button>
+        <button class="btn" id="close-stock-crypto-window">Close</button>
     </div>
     <div id="site-notification" class="site-notification">
         <span class="site-notification__text"></span>

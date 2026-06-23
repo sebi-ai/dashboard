@@ -2,7 +2,9 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import json
 import os
+import time
 
+import requests
 from dotenv import load_dotenv
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
@@ -16,6 +18,9 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
+ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY")
+CMC_API_KEY = os.environ.get("CMC_API_KEY")
+
 SETTINGS_FILE = "settings.json"
 
 # Temporary in-memory store mapping OAuth "state" -> PKCE code_verifier.
@@ -23,6 +28,72 @@ SETTINGS_FILE = "settings.json"
 # verifier) and /auth/google/callback (a separate request/Flow object that
 # needs the same verifier to exchange the code for tokens).
 _pending_oauth_states: dict[str, str] = {}
+
+# In-memory cache of the full CoinMarketCap id/name/symbol list. CMC has no
+# "search as you type" endpoint, so we fetch the full map once, cache it for
+# a while, and filter it locally for each search request.
+_cmc_map_cache: dict = {"data": None, "fetched_at": 0}
+_CMC_MAP_CACHE_SECONDS = 60 * 60  # 1 hour
+
+
+def _get_cmc_map():
+    now = time.time()
+    if _cmc_map_cache["data"] is not None and (now - _cmc_map_cache["fetched_at"]) < _CMC_MAP_CACHE_SECONDS:
+        return _cmc_map_cache["data"]
+
+    response = requests.get(
+        "https://pro-api.coinmarketcap.com/v1/cryptocurrency/map",
+        headers={"X-CMC_PRO_API_KEY": CMC_API_KEY},
+        params={"listing_status": "active", "limit": 5000},
+        timeout=10,
+    )
+    response.raise_for_status()
+    data = response.json().get("data", [])
+    _cmc_map_cache["data"] = data
+    _cmc_map_cache["fetched_at"] = now
+    return data
+
+
+def _search_stocks(keywords: str):
+    response = requests.get(
+        "https://www.alphavantage.co/query",
+        params={
+            "function": "SYMBOL_SEARCH",
+            "keywords": keywords,
+            "apikey": ALPHA_VANTAGE_API_KEY,
+        },
+        timeout=10,
+    )
+    response.raise_for_status()
+    matches = response.json().get("bestMatches", [])
+    results = []
+    for m in matches[:8]:
+        results.append({
+            "type": "stock",
+            "symbol": m.get("1. symbol"),
+            "name": m.get("2. name"),
+            "region": m.get("4. region"),
+        })
+    return results
+
+
+def _search_crypto(keywords: str):
+    keywords_lower = keywords.lower()
+    coins = _get_cmc_map()
+    matches = []
+    for coin in coins:
+        name = coin.get("name", "")
+        symbol = coin.get("symbol", "")
+        if keywords_lower in name.lower() or keywords_lower in symbol.lower():
+            matches.append({
+                "type": "crypto",
+                "symbol": symbol,
+                "name": name,
+                "id": coin.get("id"),
+            })
+        if len(matches) >= 8:
+            break
+    return matches
 
 
 def _build_google_flow(code_verifier: str | None = None):
@@ -272,6 +343,30 @@ class Handler(SimpleHTTPRequestHandler):
             settings = _load_settings()
             connected = bool((settings.get("googleCalendar") or {}).get("connected"))
             _write_json_response(self, 200, {"connected": connected})
+
+        elif path == "/finance/search":
+            params = parse_qs(parsed.query)
+            query = (params.get("q", [""])[0] or "").strip()
+
+            if len(query) < 1:
+                _write_json_response(self, 200, {"results": []})
+                return
+
+            results = []
+
+            if ALPHA_VANTAGE_API_KEY:
+                try:
+                    results.extend(_search_stocks(query))
+                except Exception as e:
+                    print("Alpha Vantage search failed:", e)
+
+            if CMC_API_KEY:
+                try:
+                    results.extend(_search_crypto(query))
+                except Exception as e:
+                    print("CoinMarketCap search failed:", e)
+
+            _write_json_response(self, 200, {"results": results})
 
         else:
             super().do_GET()

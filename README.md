@@ -51,8 +51,29 @@ GET     | /auth/google/callback     | Google redirects here after login; stores 
 GET     | /calendar/status          | Returns whether Google Calendar is connected
 GET     | /calendar/events          | Returns the next 10 upcoming events from the connected calendar
 POST    | /calendar/disconnect      | Removes the stored Google Calendar tokens
+GET     | /finance/search           | Searches stocks (Alpha Vantage) and crypto (CoinMarketCap) by keyword
 
 All other GET requests are served as static files (HTML, CSS, JS).
+
+---
+
+# Stock / Crypto Setup
+
+To use the Stock/Crypto widget:
+
+1. Get a free API key from [Alpha Vantage](https://www.alphavantage.co/support/#api-key) (for stocks).
+2. Get a free API key from [CoinMarketCap](https://coinmarketcap.com/api/) (for crypto).
+3. Add both keys to your `.env` file:
+   ```
+   ALPHA_VANTAGE_API_KEY=your-alpha-vantage-key
+   CMC_API_KEY=your-coinmarketcap-key
+   ```
+4. Start the server, open **Settings**, and check the **Stock/Crypto Prices** widget checkbox.
+5. Type a company or coin name, pick a suggestion, and press **Save**.
+
+The selected stock or crypto (type, symbol, name) is stored locally in `settings.json` under the `stockCryptoSelection` key.
+
+Note: Alpha Vantage's free tier is limited to 25 requests/day. CoinMarketCap's cryptocurrency list is cached on the server for an hour to avoid hitting rate limits while you type.
 
 ---
 
