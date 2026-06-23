@@ -40,3 +40,6 @@ web_modules/
 .yarn-integrity
 .eslintcache
 .stylelintcache
+package.json
+package-lock.json
+*.json

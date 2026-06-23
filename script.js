@@ -1,5 +1,102 @@
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
 
+const connectBtn = document.getElementById('connect-google-calendar-btn');
+const disconnectBtn = document.getElementById('disconnect-google-calendar-btn');
+const calendarStatus = document.getElementById('calendar-connection-status');
+const eventsList = document.getElementById('calendar-events-list');
+
+if (connectBtn) {
+    connectBtn.addEventListener('click', async () => {
+        try {
+            const res = await fetch(`${API_BASE}/auth/google`);
+            const data = await res.json();
+            if (!res.ok || !data.url) {
+                showNotification(data.error ?? "Could not start Google login.", "error");
+                return;
+            }
+            // Zur Google OAuth Seite weiterleiten
+            window.location.href = data.url;
+        } catch (e) {
+            showNotification("Server not reachable.", "error");
+        }
+    });
+}
+
+if (disconnectBtn) {
+    disconnectBtn.addEventListener('click', async () => {
+        try {
+            await fetch(`${API_BASE}/calendar/disconnect`, { method: "POST" });
+            showNotification("Google Calendar disconnected.", "info");
+            refreshCalendarStatus();
+        } catch (e) {
+            showNotification("Server not reachable.", "error");
+        }
+    });
+}
+
+async function refreshCalendarStatus() {
+    if (!calendarStatus) return;
+    try {
+        const res = await fetch(`${API_BASE}/calendar/status`);
+        const data = await res.json();
+
+        if (data.connected) {
+            calendarStatus.textContent = "Connected to Google Calendar.";
+            if (connectBtn) connectBtn.style.display = "none";
+            if (disconnectBtn) disconnectBtn.style.display = "inline-block";
+            loadCalendarEvents();
+        } else {
+            calendarStatus.textContent = "Not connected.";
+            if (connectBtn) connectBtn.style.display = "inline-block";
+            if (disconnectBtn) disconnectBtn.style.display = "none";
+            if (eventsList) eventsList.innerHTML = "";
+        }
+    } catch (e) {
+        calendarStatus.textContent = "Could not reach server.";
+    }
+}
+
+async function loadCalendarEvents() {
+    if (!eventsList) return;
+    try {
+        const res = await fetch(`${API_BASE}/calendar/events`);
+        const data = await res.json();
+
+        if (!res.ok) {
+            eventsList.innerHTML = `<li>${data.error ?? "Could not load events."}</li>`;
+            return;
+        }
+
+        eventsList.innerHTML = "";
+        if (!data.events || data.events.length === 0) {
+            eventsList.innerHTML = "<li>No upcoming events.</li>";
+            return;
+        }
+
+        data.events.forEach(event => {
+            const li = document.createElement("li");
+            const start = event.start?.dateTime || event.start?.date || "";
+            const startLabel = start ? new Date(start).toLocaleString() : "";
+            li.textContent = `${startLabel} — ${event.summary ?? "(no title)"}`;
+            eventsList.appendChild(li);
+        });
+    } catch (e) {
+        eventsList.innerHTML = "<li>Server not reachable.</li>";
+    }
+}
+
+// Nach OAuth-Redirect zurück von Google: Status prüfen und Meldung anzeigen
+function handleGoogleRedirectParams() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("google_connected")) {
+        showNotification("Google Calendar connected successfully.", "success");
+        history.replaceState(null, "", window.location.pathname);
+    } else if (params.has("google_error")) {
+        showNotification("Google Calendar connection failed: " + params.get("google_error"), "error");
+        history.replaceState(null, "", window.location.pathname);
+    }
+}
+
 async function loadSettings() {
     try {
         const res = await fetch(`${API_BASE}/load`);
@@ -332,4 +429,9 @@ if (countdownWidget && countdownWindow && closeCountdown && countdownDate) {
     closeCountdown.addEventListener("click", function () {
         countdownWindow.style.display = "none";
     });
+}
+
+if (calendarStatus) {
+    handleGoogleRedirectParams();
+    refreshCalendarStatus();
 }

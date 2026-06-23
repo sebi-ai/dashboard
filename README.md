@@ -40,14 +40,40 @@ dashboard/
 ---
 
 # API Endpoints
-The python server exposes to endpoints used by the frontend:
+The python server exposes these endpoints used by the frontend:
 
-Method  |   Path    |   Description
---------|-----------|---------------------------------- 
-POST    | /save     | Save settings in settings.json
-GET     | /load     | Returns to current settings.json
+Method  |   Path                    |   Description
+--------|---------------------------|----------------------------------
+POST    | /save                     | Save settings in settings.json
+GET     | /load                     | Returns the current settings.json
+GET     | /auth/google              | Returns the Google OAuth login URL
+GET     | /auth/google/callback     | Google redirects here after login; stores tokens in settings.json
+GET     | /calendar/status          | Returns whether Google Calendar is connected
+GET     | /calendar/events          | Returns the next 10 upcoming events from the connected calendar
+POST    | /calendar/disconnect      | Removes the stored Google Calendar tokens
 
-All other GET requests are served as static file (HTML, CSS, JS).
+All other GET requests are served as static files (HTML, CSS, JS).
+
+---
+
+# Google Calendar Setup
+
+To use the Calendar widget with your real Google Calendar:
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/), create a project (or use an existing one) and enable the **Google Calendar API**.
+2. Under **APIs & Services → Credentials**, create an **OAuth 2.0 Client ID** of type "Web application".
+3. Add `http://localhost:8000/auth/google/callback` as an authorized redirect URI.
+4. Create a `.env` file in the project folder (it's already in `.gitignore`, so it won't be committed) with:
+   ```
+   GOOGLE_CLIENT_ID=your-client-id
+   GOOGLE_CLIENT_SECRET=your-client-secret
+   GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
+   ```
+5. Start the server, open **Settings**, and press **Connect Google Calendar**.
+
+The access and refresh tokens are stored locally in `settings.json` under the `googleCalendar` key. Nothing is sent anywhere except directly to Google's own servers.
+
+**Important:** never commit your real `.env` file or share your client secret. If it's ever exposed accidentally, regenerate it in the Google Cloud Console.
 
 ---
 
