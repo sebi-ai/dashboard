@@ -51,10 +51,11 @@
 }
 
 #head {
+  position: relative;
   height: 80px;
   display: flex;
   justify-content: center;  
-  align-items: top;       
+  align-items: center;       
   gap: 40px;
   border: 2px solid rgb(0, 2, 131);
   border-radius: 40px;  
@@ -536,4 +537,15 @@ body.modal-open::before {
 #notifications-window,
 #stock-crypto-window {
   z-index: 1001;
+}
+
+
+#logo {
+  position: absolute;
+  left: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
 }
