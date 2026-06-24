@@ -27,7 +27,7 @@
             <ul id="calendar-events-list"></ul>
         </div>
         <br>
-        <button class="btn" id="close-calendar-window">Close</button>
+        <button class="btn" id="close-calendar-window">Save</button>
     </div>
     <div id="notifications-window">
         <p>Connect your Google account to show your latest Gmail messages here.</p>
@@ -39,7 +39,7 @@
             <ul id="notifications-messages-list"></ul>
         </div>
         <br>
-        <button class="btn" id="close-notifications-window">Close</button>
+        <button class="btn" id="close-notifications-window">Save</button>
     </div>
     <div id="stock-crypto-window">
         <p>Choose a stock or a cryptocurrency to display:</p>
@@ -84,32 +84,32 @@
                         <input type="radio" id="weather-widget-star" name="widget-star" class="star-checkbox" disabled>
                     </li>
                     <li>
-                        <input type="checkbox" id="notifications-widget" name="notifications-widget" class="limited-checkbox">
-                        <label for="notifications-widget">Notifications</label>
-                        <button type="button" id="open-notifications-btn" class="btn btn-small">Configure</button>
-                        <input type="radio" id="notifications-widget-star" name="widget-star" class="star-checkbox" disabled>
-                    </li>
-                    <li>
                         <input type="checkbox" id="date-time-widget" name="date-time-widget" class="limited-checkbox">
                         <label for="date-time-widget">Date and Time</label>
                         <input type="radio" id="date-time-widget-star" name="widget-star" class="star-checkbox" disabled>
                     </li>
                     <li>
+                        <input type="checkbox" id="notifications-widget" name="notifications-widget" class="limited-checkbox">
+                        <label for="notifications-widget">Notifications</label>
+                        <button type="button" id="open-notifications-btn" class="btn btn-small">Change</button>
+                        <input type="radio" id="notifications-widget-star" name="widget-star" class="star-checkbox" disabled>
+                    </li>
+                    <li>
                         <input type="checkbox" id="countdown-widget" name="countdown-widget" class="limited-checkbox">
                         <label for="countdown-widget">Countdown to Date</label>
-                        <button type="button" id="open-countdown-btn" class="btn btn-small">Configure</button>
+                        <button type="button" id="open-countdown-btn" class="btn btn-small">Change</button>
                         <input type="radio" id="countdown-widget-star" name="widget-star" class="star-checkbox" disabled>
                     </li>
                     <li>
                         <input type="checkbox" id="calendar-widget" name="calendar-widget" class="limited-checkbox">
                         <label for="calendar-widget">Calendar</label>
-                        <button type="button" id="open-calendar-btn" class="btn btn-small">Configure</button>
+                        <button type="button" id="open-calendar-btn" class="btn btn-small">Change</button>
                         <input type="radio" id="calendar-widget-star" name="widget-star" class="star-checkbox" disabled>
                     </li>
                     <li>
                         <input type="checkbox" id="stock-crypto-widget" name="stock-crypto-widget" class="limited-checkbox">
                         <label for="stock-crypto-widget">Stock/Crypto Prices</label>
-                        <button type="button" id="open-stock-crypto-btn" class="btn btn-small">Configure</button>
+                        <button type="button" id="open-stock-crypto-btn" class="btn btn-small">Change</button>
                         <input type="radio" id="stock-crypto-widget-star" name="widget-star" class="star-checkbox" disabled>
                     </li>
                 </ul>

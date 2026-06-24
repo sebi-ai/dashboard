@@ -510,6 +510,25 @@ if (saveSettingsBtn) {
     });
 }
 
+// Intelligente Funktion: prüft ob noch ein Modal offen ist
+function updateModalOverlay() {
+    const modals = [
+        document.getElementById("countdown-window"),
+        document.getElementById("calendar-window"),
+        document.getElementById("notifications-window"),
+        document.getElementById("stock-crypto-window")
+    ];
+    
+    const hasOpenModal = modals.some(modal => modal && modal.style.display === "block");
+    
+    if (hasOpenModal) {
+        document.body.classList.add("modal-open");
+    } else {
+        document.body.classList.remove("modal-open");
+    }
+}
+
+// Alle EventListener anpassen um updateModalOverlay zu nutzen
 const countdownWidget = document.getElementById("countdown-widget");
 const countdownWindow = document.getElementById("countdown-window");
 const closeCountdown = document.getElementById("save-countdown");
@@ -519,6 +538,7 @@ const openCountdownBtn = document.getElementById("open-countdown-btn");
 function openCountdownWindow() {
     if (!countdownWindow) return;
     countdownWindow.style.display = "block";
+    updateModalOverlay();
     if (countdownDate) countdownDate.focus();
 }
 
@@ -541,6 +561,7 @@ if (openCountdownBtn) {
 if (closeCountdown && countdownWindow) {
     closeCountdown.addEventListener("click", function () {
         countdownWindow.style.display = "none";
+        updateModalOverlay();
     });
 }
 
@@ -555,7 +576,10 @@ const closeCalendarWindow = document.getElementById("close-calendar-window");
 const openCalendarBtn = document.getElementById("open-calendar-btn");
 
 function openCalendarWindow() {
-    if (calendarWindow) calendarWindow.style.display = "block";
+    if (calendarWindow) {
+        calendarWindow.style.display = "block";
+        updateModalOverlay();
+    }
 }
 
 // Checkbox öffnet das Popup beim Aktivieren.
@@ -575,6 +599,7 @@ if (openCalendarBtn) {
 if (closeCalendarWindow && calendarWindow) {
     closeCalendarWindow.addEventListener("click", function () {
         calendarWindow.style.display = "none";
+        updateModalOverlay();
     });
 }
 
@@ -588,7 +613,10 @@ const closeNotificationsWindow = document.getElementById("close-notifications-wi
 const openNotificationsBtn = document.getElementById("open-notifications-btn");
 
 function openNotificationsWindow() {
-    if (notificationsWindow) notificationsWindow.style.display = "block";
+    if (notificationsWindow) {
+        notificationsWindow.style.display = "block";
+        updateModalOverlay();
+    }
 }
 
 // Checkbox öffnet das Popup beim Aktivieren.
@@ -608,6 +636,7 @@ if (openNotificationsBtn) {
 if (closeNotificationsWindow && notificationsWindow) {
     closeNotificationsWindow.addEventListener("click", function () {
         notificationsWindow.style.display = "none";
+        updateModalOverlay();
     });
 }
 
@@ -626,6 +655,7 @@ const openStockCryptoBtn = document.getElementById("open-stock-crypto-btn");
 function openStockCryptoWindow() {
     if (!stockCryptoWindow) return;
     stockCryptoWindow.style.display = "block";
+    updateModalOverlay();
     if (stockCryptoSearchInput) stockCryptoSearchInput.focus();
 }
 
@@ -646,6 +676,7 @@ if (openStockCryptoBtn) {
 if (closeStockCryptoWindow && stockCryptoWindow) {
     closeStockCryptoWindow.addEventListener("click", function () {
         stockCryptoWindow.style.display = "none";
+        updateModalOverlay();
     });
 }
 
@@ -711,5 +742,6 @@ if (stockCryptoSearchInput && stockCryptoSuggestions) {
 if (saveStockCryptoBtn && stockCryptoWindow) {
     saveStockCryptoBtn.addEventListener("click", function () {
         stockCryptoWindow.style.display = "none";
+        updateModalOverlay();
     });
 }
