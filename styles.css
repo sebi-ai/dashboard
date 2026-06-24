@@ -366,8 +366,8 @@ border-color: rgb(0, 2, 131);
     background: white;
     padding: 20px;
     z-index: 1000;
-    border-radius: 40px;
-    border: 2px solid rgb(0, 2, 131);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
 }
 
 #calendar-window {
@@ -379,12 +379,50 @@ border-color: rgb(0, 2, 131);
     background: white;
     padding: 20px;
     z-index: 1000;
-    border-radius: 40px;
-    border: 2px solid rgb(0, 2, 131);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     min-width: 360px;
     max-width: 90vw;
     max-height: 80vh;
     overflow-y: auto;
+}
+
+#notifications-window {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 20px;
+    z-index: 1000;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    min-width: 360px;
+    max-width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+#notifications-messages-box ul {
+    list-style-type: none;
+    padding-left: 0;
+}
+
+#notifications-messages-box li {
+    border-bottom: 1px solid rgba(0, 2, 131, 0.2);
+    padding: 8px 0;
+}
+
+#notifications-messages-box .message-subject {
+    font-weight: 600;
+}
+
+#notifications-messages-box .message-from,
+#notifications-messages-box .message-snippet {
+    display: block;
+    font-size: 14px;
+    color: rgba(0, 2, 131, 0.7);
 }
 
 #stock-crypto-window {
@@ -396,8 +434,8 @@ border-color: rgb(0, 2, 131);
     background: white;
     padding: 20px;
     z-index: 1000;
-    border-radius: 40px;
-    border: 2px solid rgb(0, 2, 131);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     min-width: 360px;
     max-width: 90vw;
     max-height: 80vh;
@@ -415,7 +453,7 @@ border-color: rgb(0, 2, 131);
 #stock-crypto-suggestions li {
     padding: 8px;
     cursor: pointer;
-    border-bottom: 2px solid rgb(0, 2, 131);
+    border-bottom: 1px solid rgba(0, 2, 131, 0.15);
 }
 
 #stock-crypto-suggestions li:hover {

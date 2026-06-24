@@ -27,7 +27,19 @@
             <ul id="calendar-events-list"></ul>
         </div>
         <br>
-        <button class="btn" id="close-calendar-window">Save</button>
+        <button class="btn" id="close-calendar-window">Close</button>
+    </div>
+    <div id="notifications-window">
+        <p>Connect your Google account to show your latest Gmail messages here.</p>
+        <p>Status: <span id="notifications-connection-status">Checking…</span></p>
+        <button type="button" id="connect-google-mail-btn" class="btn">Connect Google Mail</button>
+        <button type="button" id="disconnect-google-mail-btn" class="btn" style="display:none;">Disconnect</button>
+        <div id="notifications-messages-box">
+            <h3>Latest messages</h3>
+            <ul id="notifications-messages-list"></ul>
+        </div>
+        <br>
+        <button class="btn" id="close-notifications-window">Close</button>
     </div>
     <div id="stock-crypto-window">
         <p>Choose a stock or a cryptocurrency to display:</p>
@@ -36,6 +48,7 @@
         <p id="stock-crypto-selected" style="display:none;">Selected: <strong id="stock-crypto-selected-label"></strong></p>
         <br>
         <button class="btn" id="save-stock-crypto">Save</button>
+        <button class="btn" id="close-stock-crypto-window">Close</button>
     </div>
     <div id="site-notification" class="site-notification">
         <span class="site-notification__text"></span>
@@ -74,6 +87,7 @@
                     <li>
                         <input type="checkbox" id="notifications-widget" name="notifications-widget" class="limited-checkbox">
                         <label for="notifications-widget">Notifications</label>
+                        <button type="button" id="open-notifications-btn" class="btn btn-small">Configure</button>
                         <input type="radio" id="notifications-widget-star" name="widget-star" class="star-checkbox" disabled>
                     </li>
                     <li>
@@ -84,19 +98,19 @@
                     <li>
                         <input type="checkbox" id="countdown-widget" name="countdown-widget" class="limited-checkbox">
                         <label for="countdown-widget">Countdown to Date</label>
-                        <button type="button" id="open-countdown-btn" class="btn btn-small">Change</button>
+                        <button type="button" id="open-countdown-btn" class="btn btn-small">Configure</button>
                         <input type="radio" id="countdown-widget-star" name="widget-star" class="star-checkbox" disabled>
                     </li>
                     <li>
                         <input type="checkbox" id="calendar-widget" name="calendar-widget" class="limited-checkbox">
                         <label for="calendar-widget">Calendar</label>
-                        <button type="button" id="open-calendar-btn" class="btn btn-small">Change</button>
+                        <button type="button" id="open-calendar-btn" class="btn btn-small">Configure</button>
                         <input type="radio" id="calendar-widget-star" name="widget-star" class="star-checkbox" disabled>
                     </li>
                     <li>
                         <input type="checkbox" id="stock-crypto-widget" name="stock-crypto-widget" class="limited-checkbox">
                         <label for="stock-crypto-widget">Stock/Crypto Prices</label>
-                        <button type="button" id="open-stock-crypto-btn" class="btn btn-small">Change</button>
+                        <button type="button" id="open-stock-crypto-btn" class="btn btn-small">Configure</button>
                         <input type="radio" id="stock-crypto-widget-star" name="widget-star" class="star-checkbox" disabled>
                     </li>
                 </ul>

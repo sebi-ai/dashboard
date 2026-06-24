@@ -90,6 +90,107 @@ async function loadCalendarEvents() {
     }
 }
 
+// --- Notifications widget (Gmail) ---
+// Uses the same Google login as the Calendar widget (/auth/google), just
+// with the gmail.readonly scope added on the server side.
+
+const connectMailBtn = document.getElementById('connect-google-mail-btn');
+const disconnectMailBtn = document.getElementById('disconnect-google-mail-btn');
+const notificationsStatus = document.getElementById('notifications-connection-status');
+const messagesList = document.getElementById('notifications-messages-list');
+
+if (connectMailBtn) {
+    connectMailBtn.addEventListener('click', async () => {
+        try {
+            const res = await fetch(`${API_BASE}/auth/google`);
+            const data = await res.json();
+            if (!res.ok || !data.url) {
+                showNotification(data.error ?? "Could not start Google login.", "error");
+                return;
+            }
+            window.location.href = data.url;
+        } catch (e) {
+            showNotification("Server not reachable.", "error");
+        }
+    });
+}
+
+if (disconnectMailBtn) {
+    disconnectMailBtn.addEventListener('click', async () => {
+        try {
+            await fetch(`${API_BASE}/calendar/disconnect`, { method: "POST" });
+            showNotification("Google account disconnected.", "info");
+            refreshNotificationsStatus();
+        } catch (e) {
+            showNotification("Server not reachable.", "error");
+        }
+    });
+}
+
+async function refreshNotificationsStatus() {
+    if (!notificationsStatus) return;
+    try {
+        const res = await fetch(`${API_BASE}/calendar/status`);
+        const data = await res.json();
+
+        if (data.connected) {
+            notificationsStatus.textContent = "Connected to Google Mail.";
+            if (connectMailBtn) connectMailBtn.style.display = "none";
+            if (disconnectMailBtn) disconnectMailBtn.style.display = "inline-block";
+            loadMessages();
+        } else {
+            notificationsStatus.textContent = "Not connected.";
+            if (connectMailBtn) connectMailBtn.style.display = "inline-block";
+            if (disconnectMailBtn) disconnectMailBtn.style.display = "none";
+            if (messagesList) messagesList.innerHTML = "";
+        }
+    } catch (e) {
+        notificationsStatus.textContent = "Could not reach server.";
+    }
+}
+
+async function loadMessages() {
+    if (!messagesList) return;
+    try {
+        const res = await fetch(`${API_BASE}/notifications/messages`);
+        const data = await res.json();
+
+        if (!res.ok) {
+            messagesList.innerHTML = `<li>${data.error ?? "Could not load messages."}</li>`;
+            return;
+        }
+
+        messagesList.innerHTML = "";
+        if (!data.messages || data.messages.length === 0) {
+            messagesList.innerHTML = "<li>No messages found.</li>";
+            return;
+        }
+
+        data.messages.forEach(message => {
+            const li = document.createElement("li");
+
+            const subject = document.createElement("span");
+            subject.className = "message-subject";
+            subject.textContent = message.subject;
+            li.appendChild(subject);
+
+            const from = document.createElement("span");
+            from.className = "message-from";
+            from.textContent = message.from;
+            li.appendChild(from);
+
+            const snippet = document.createElement("span");
+            snippet.className = "message-snippet";
+            snippet.textContent = message.snippet;
+            li.appendChild(snippet);
+
+            messagesList.appendChild(li);
+        });
+    } catch (e) {
+        messagesList.innerHTML = "<li>Server not reachable.</li>";
+    }
+}
+
 // Nach OAuth-Redirect zurück von Google: Status prüfen und Meldung anzeigen
 function handleGoogleRedirectParams() {
     const params = new URLSearchParams(window.location.search);
@@ -474,6 +575,39 @@ if (openCalendarBtn) {
 if (closeCalendarWindow && calendarWindow) {
     closeCalendarWindow.addEventListener("click", function () {
         calendarWindow.style.display = "none";
+    });
+}
+
+if (notificationsStatus) {
+    refreshNotificationsStatus();
+}
+
+const notificationsWidgetCheckbox = document.getElementById("notifications-widget");
+const notificationsWindow = document.getElementById("notifications-window");
+const closeNotificationsWindow = document.getElementById("close-notifications-window");
+const openNotificationsBtn = document.getElementById("open-notifications-btn");
+
+function openNotificationsWindow() {
+    if (notificationsWindow) notificationsWindow.style.display = "block";
+}
+
+// Checkbox öffnet das Popup beim Aktivieren.
+if (notificationsWidgetCheckbox) {
+    notificationsWidgetCheckbox.addEventListener("change", function () {
+        if (notificationsWidgetCheckbox.checked) {
+            openNotificationsWindow();
+        }
+    });
+}
+
+// "Configure"-Button öffnet das Popup ebenfalls.
+if (openNotificationsBtn) {
+    openNotificationsBtn.addEventListener("click", openNotificationsWindow);
+}
+
+if (closeNotificationsWindow && notificationsWindow) {
+    closeNotificationsWindow.addEventListener("click", function () {
+        notificationsWindow.style.display = "none";
     });
 }
 

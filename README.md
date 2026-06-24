@@ -52,6 +52,7 @@ GET     | /calendar/status          | Returns whether Google Calendar is connect
 GET     | /calendar/events          | Returns the next 10 upcoming events from the connected calendar
 POST    | /calendar/disconnect      | Removes the stored Google Calendar tokens
 GET     | /finance/search           | Searches stocks (Alpha Vantage) and crypto (CoinMarketCap) by keyword
+GET     | /notifications/messages   | Returns the latest Gmail inbox messages (uses the same Google login as Calendar)
 
 All other GET requests are served as static files (HTML, CSS, JS).
 

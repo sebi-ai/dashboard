@@ -16,7 +16,10 @@ load_dotenv()
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
-GOOGLE_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/gmail.readonly",
+]
 
 ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY")
 CMC_API_KEY = os.environ.get("CMC_API_KEY")
@@ -367,6 +370,48 @@ class Handler(SimpleHTTPRequestHandler):
                     print("CoinMarketCap search failed:", e)
 
             _write_json_response(self, 200, {"results": results})
+
+        elif path == "/notifications/messages":
+            credentials = _load_google_credentials()
+            if credentials is None:
+                _write_json_response(self, 401, {"error": "Google Mail is not connected."})
+                return
+            try:
+                service = build("gmail", "v1", credentials=credentials)
+                listing = service.users().messages().list(
+                    userId="me",
+                    labelIds=["INBOX"],
+                    maxResults=10,
+                ).execute()
+                message_refs = listing.get("messages", [])
+
+                messages = []
+                for ref in message_refs:
+                    full = service.users().messages().get(
+                        userId="me",
+                        id=ref["id"],
+                        format="metadata",
+                        metadataHeaders=["From", "Subject", "Date"],
+                    ).execute()
+                    headers = {h["name"]: h["value"] for h in full.get("payload", {}).get("headers", [])}
+                    messages.append({
+                        "id": full.get("id"),
+                        "from": headers.get("From", "(unknown sender)"),
+                        "subject": headers.get("Subject", "(no subject)"),
+                        "date": headers.get("Date", ""),
+                        "snippet": full.get("snippet", ""),
+                        "unread": "UNREAD" in full.get("labelIds", []),
+                    })
+
+                _write_json_response(self, 200, {"messages": messages})
+            except Exception as e:
+                error_text = str(e)
+                if "insufficient" in error_text.lower() or "403" in error_text:
+                    _write_json_response(self, 403, {
+                        "error": "Missing Gmail permission. Please disconnect and reconnect Google to grant access to your inbox."
+                    })
+                else:
+                    _write_json_response(self, 500, {"error": error_text})
 
         else:
             super().do_GET()
