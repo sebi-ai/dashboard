@@ -413,30 +413,31 @@ const countdownWidget = document.getElementById("countdown-widget");
 const countdownWindow = document.getElementById("countdown-window");
 const closeCountdown = document.getElementById("save-countdown");
 const countdownDate = document.getElementById("countdown-date");
+const openCountdownBtn = document.getElementById("open-countdown-btn");
 
-if (countdownWidget && countdownWindow) {
+function openCountdownWindow() {
+    if (!countdownWindow) return;
+    countdownWindow.style.display = "block";
+    if (countdownDate) countdownDate.focus();
+}
+
+// Checkbox: öffnet das Popup beim Aktivieren, leert das Datum beim Deaktivieren.
+if (countdownWidget) {
     countdownWidget.addEventListener("change", function () {
         if (countdownWidget.checked) {
-            countdownWindow.style.display = "block";
-            countdownDate.focus();
-        } else {
-            countdownWindow.style.display = "none";
+            openCountdownWindow();
+        } else if (countdownDate) {
             countdownDate.value = "";
         }
     });
 }
 
-if (countdownWidget && countdownWindow && closeCountdown && countdownDate) {
-    countdownWidget.addEventListener("change", function () {
-        if (countdownWidget.checked) {
-            countdownWindow.style.display = "block";
-            countdownDate.focus();
-        } else {
-            countdownWindow.style.display = "none";
-            countdownDate.value = "";
-        }
-    });
+// "Configure"-Button öffnet das Popup ebenfalls.
+if (openCountdownBtn) {
+    openCountdownBtn.addEventListener("click", openCountdownWindow);
+}
 
+if (closeCountdown && countdownWindow) {
     closeCountdown.addEventListener("click", function () {
         countdownWindow.style.display = "none";
     });
@@ -450,15 +451,24 @@ if (calendarStatus) {
 const calendarWidgetCheckbox = document.getElementById("calendar-widget");
 const calendarWindow = document.getElementById("calendar-window");
 const closeCalendarWindow = document.getElementById("close-calendar-window");
+const openCalendarBtn = document.getElementById("open-calendar-btn");
 
-if (calendarWidgetCheckbox && calendarWindow) {
+function openCalendarWindow() {
+    if (calendarWindow) calendarWindow.style.display = "block";
+}
+
+// Checkbox öffnet das Popup beim Aktivieren.
+if (calendarWidgetCheckbox) {
     calendarWidgetCheckbox.addEventListener("change", function () {
         if (calendarWidgetCheckbox.checked) {
-            calendarWindow.style.display = "block";
-        } else {
-            calendarWindow.style.display = "none";
+            openCalendarWindow();
         }
     });
+}
+
+// "Configure"-Button öffnet das Popup ebenfalls.
+if (openCalendarBtn) {
+    openCalendarBtn.addEventListener("click", openCalendarWindow);
 }
 
 if (closeCalendarWindow && calendarWindow) {
@@ -477,16 +487,26 @@ const stockCryptoSuggestions = document.getElementById("stock-crypto-suggestions
 const stockCryptoSelectedBox = document.getElementById("stock-crypto-selected");
 const stockCryptoSelectedLabel = document.getElementById("stock-crypto-selected-label");
 const saveStockCryptoBtn = document.getElementById("save-stock-crypto");
+const openStockCryptoBtn = document.getElementById("open-stock-crypto-btn");
 
-if (stockCryptoWidgetCheckbox && stockCryptoWindow) {
+function openStockCryptoWindow() {
+    if (!stockCryptoWindow) return;
+    stockCryptoWindow.style.display = "block";
+    if (stockCryptoSearchInput) stockCryptoSearchInput.focus();
+}
+
+// Checkbox öffnet das Popup beim Aktivieren.
+if (stockCryptoWidgetCheckbox) {
     stockCryptoWidgetCheckbox.addEventListener("change", function () {
         if (stockCryptoWidgetCheckbox.checked) {
-            stockCryptoWindow.style.display = "block";
-            if (stockCryptoSearchInput) stockCryptoSearchInput.focus();
-        } else {
-            stockCryptoWindow.style.display = "none";
+            openStockCryptoWindow();
         }
     });
+}
+
+// "Configure"-Button öffnet das Popup ebenfalls.
+if (openStockCryptoBtn) {
+    openStockCryptoBtn.addEventListener("click", openStockCryptoWindow);
 }
 
 if (closeStockCryptoWindow && stockCryptoWindow) {
