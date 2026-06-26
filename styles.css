@@ -258,12 +258,6 @@ input[type="color"] {
   background: none;
 }
 
-input[type="color"]:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-  border-color: rgba(0, 2, 131, 0.3);
-}
-
 input[type="color"]:hover {
   border-color: rgb(0, 2, 131);
   transform: scale(1.1);
@@ -504,8 +498,6 @@ a:visited {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 45vw;  
-  height: 35vh;  
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -514,6 +506,7 @@ a:visited {
   border: 2px solid rgb(0, 2, 131);
   border-radius: 40px;
   box-shadow: 0 10px 30px rgba(0, 2, 131, 0.3);
+  padding: 15px;
 }
 
 /* Modal Overlay - Hintergrund blur Effekt */
@@ -554,4 +547,5 @@ body.modal-open::before {
   width: 44px;
   height: 44px;
   object-fit: contain;
+  margin-right: 10px;
 }

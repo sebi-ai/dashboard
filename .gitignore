@@ -43,4 +43,3 @@ web_modules/
 package.json
 package-lock.json
 *.json
-nvidia.py
