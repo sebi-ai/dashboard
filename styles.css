@@ -508,8 +508,6 @@ a:visited {
   box-shadow: 0 10px 30px rgba(0, 2, 131, 0.3);
   padding: 15px;
 }
-
-/* Modal Overlay - Hintergrund blur Effekt */
 body::before {
   content: "";
   position: fixed;

@@ -1,9 +1,17 @@
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
 
+// Google OAuth Client-ID (muss in .env oder direkt hier definiert werden)
+const CLIENT_ID = "927696919752-l35s9nedd6srh8n8dn8nqc3oi1mv3njd.apps.googleusercontent.com"; // Ersetzt mit echtem Client-ID
+
 const connectBtn = document.getElementById('connect-google-calendar-btn');
 const disconnectBtn = document.getElementById('disconnect-google-calendar-btn');
 const calendarStatus = document.getElementById('calendar-connection-status');
 const eventsList = document.getElementById('calendar-events-list');
+
+const connectMailBtn = document.getElementById('connect-google-mail-btn');
+const disconnectMailBtn = document.getElementById('disconnect-google-mail-btn');
+const notificationsStatus = document.getElementById('notifications-connection-status');
+const messagesList = document.getElementById('notifications-messages-list');
 
 // Holds the currently chosen stock/crypto suggestion until "Save" is pressed,
 // or the value restored from settings.json on load.
@@ -11,74 +19,129 @@ const eventsList = document.getElementById('calendar-events-list');
 let stockCryptoSelection = null;
 
 if (connectBtn) {
-    connectBtn.addEventListener('click', async () => {
-        try {
-            const res = await fetch(`${API_BASE}/auth/google`);
-            const data = await res.json();
-            if (!res.ok || !data.url) {
-                showNotification(data.error ?? "Could not start Google login.", "error");
-                return;
-            }
-            // Zur Google OAuth Seite weiterleiten
-            window.location.href = data.url;
-        } catch (e) {
-            showNotification("Server not reachable.", "error");
-        }
+    connectBtn.addEventListener('click', () => {
+        const oauth2Client = google.accounts.oauth2.initCodeClient({
+            client_id: CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
+            redirect_uri: `${window.location.origin}/settings.html`,
+            code_verifier: '', // Wird automatisch generiert
+            callback: (tokenResponse) => {
+                if (tokenResponse.access_token) {
+                    localStorage.setItem('google_access_token', tokenResponse.access_token);
+                    localStorage.setItem('google_refresh_token', tokenResponse.refresh_token || '');
+                    showNotification('Google account connected!');
+                    refreshCalendarStatus();
+                    refreshNotificationsStatus();
+                } else {
+                    showNotification('Failed to connect Google account.');
+                }
+            },
+        });
+        oauth2Client.requestCode();
+    });
+}
+
+if (connectMailBtn) {
+    connectMailBtn.addEventListener('click', () => {
+        const oauth2Client = google.accounts.oauth2.initCodeClient({
+            client_id: CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
+            redirect_uri: `${window.location.origin}/settings.html`,
+            code_verifier: '', // Wird automatisch generiert
+            callback: (tokenResponse) => {
+                if (tokenResponse.access_token) {
+                    localStorage.setItem('google_access_token', tokenResponse.access_token);
+                    localStorage.setItem('google_refresh_token', tokenResponse.refresh_token || '');
+                    showNotification('Google account connected!');
+                    refreshCalendarStatus();
+                    refreshNotificationsStatus();
+                } else {
+                    showNotification('Failed to connect Google account.');
+                }
+            },
+        });
+        oauth2Client.requestCode();
     });
 }
 
 if (disconnectBtn) {
-    disconnectBtn.addEventListener('click', async () => {
-        try {
-            await fetch(`${API_BASE}/calendar/disconnect`, { method: "POST" });
-            showNotification("Google Calendar disconnected.", "info");
-            refreshCalendarStatus();
-        } catch (e) {
-            showNotification("Server not reachable.", "error");
-        }
+    disconnectBtn.addEventListener('click', () => {
+        localStorage.removeItem('google_access_token');
+        localStorage.removeItem('google_refresh_token');
+        showNotification('Google Calendar disconnected.');
+        refreshCalendarStatus();
+    });
+}
+
+if (disconnectMailBtn) {
+    disconnectMailBtn.addEventListener('click', () => {
+        localStorage.removeItem('google_access_token');
+        localStorage.removeItem('google_refresh_token');
+        showNotification('Google Mail disconnected.');
+        refreshNotificationsStatus();
     });
 }
 
 async function refreshCalendarStatus() {
     if (!calendarStatus) return;
-    try {
-        const res = await fetch(`${API_BASE}/calendar/status`);
-        const data = await res.json();
+    const accessToken = localStorage.getItem('google_access_token');
+    if (!accessToken) {
+        calendarStatus.textContent = "Not connected.";
+        if (connectBtn) connectBtn.style.display = "inline-block";
+        if (disconnectBtn) disconnectBtn.style.display = "none";
+        if (eventsList) eventsList.innerHTML = "";
+        return;
+    }
 
-        if (data.connected) {
+    try {
+        // Token-Validierung direkt an Google senden
+        const response = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${accessToken}`);
+        if (response.ok) {
             calendarStatus.textContent = "Connected to Google Calendar.";
             if (connectBtn) connectBtn.style.display = "none";
             if (disconnectBtn) disconnectBtn.style.display = "inline-block";
             loadCalendarEvents();
         } else {
-            calendarStatus.textContent = "Not connected.";
-            if (connectBtn) connectBtn.style.display = "inline-block";
-            if (disconnectBtn) disconnectBtn.style.display = "none";
-            if (eventsList) eventsList.innerHTML = "";
+            throw new Error('Token invalid');
         }
     } catch (e) {
-        calendarStatus.textContent = "Could not reach server.";
+        calendarStatus.textContent = "Not connected.";
+        if (connectBtn) connectBtn.style.display = "inline-block";
+        if (disconnectBtn) disconnectBtn.style.display = "none";
+        localStorage.removeItem('google_access_token');
+        localStorage.removeItem('google_refresh_token');
     }
 }
 
 async function loadCalendarEvents() {
     if (!eventsList) return;
+    const accessToken = localStorage.getItem('google_access_token');
+    if (!accessToken) {
+        eventsList.innerHTML = "<li>Not connected to Google Calendar.</li>";
+        return;
+    }
+
     try {
-        const res = await fetch(`${API_BASE}/calendar/events`);
-        const data = await res.json();
-
-        if (!res.ok) {
-            eventsList.innerHTML = `<li>${data.error ?? "Could not load events."}</li>`;
-            return;
+        // API-Anfrage direkt an Google senden
+        const response = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=10&singleEvents=true&orderBy=startTime`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+        if (!response.ok) {
+            throw new Error('Failed to fetch events');
         }
-
+        const data = await response.json();
         eventsList.innerHTML = "";
-        if (!data.events || data.events.length === 0) {
+        if (!data.items || data.items.length === 0) {
             eventsList.innerHTML = "<li>No upcoming events.</li>";
             return;
         }
-
-        data.events.forEach(event => {
+        data.items.forEach(event => {
             const li = document.createElement("li");
             const start = event.start?.dateTime || event.start?.date || "";
             const startLabel = start ? new Date(start).toLocaleString() : "";
@@ -86,7 +149,8 @@ async function loadCalendarEvents() {
             eventsList.appendChild(li);
         });
     } catch (e) {
-        eventsList.innerHTML = "<li>Server not reachable.</li>";
+        eventsList.innerHTML = "<li>Failed to load events.</li>";
+        console.error('Error loading calendar events:', e);
     }
 }
 
@@ -94,112 +158,123 @@ async function loadCalendarEvents() {
 // Uses the same Google login as the Calendar widget (/auth/google), just
 // with the gmail.readonly scope added on the server side.
 
-const connectMailBtn = document.getElementById('connect-google-mail-btn');
-const disconnectMailBtn = document.getElementById('disconnect-google-mail-btn');
-const notificationsStatus = document.getElementById('notifications-connection-status');
-const messagesList = document.getElementById('notifications-messages-list');
-
-if (connectMailBtn) {
-    connectMailBtn.addEventListener('click', async () => {
-        try {
-            const res = await fetch(`${API_BASE}/auth/google`);
-            const data = await res.json();
-            if (!res.ok || !data.url) {
-                showNotification(data.error ?? "Could not start Google login.", "error");
-                return;
-            }
-            window.location.href = data.url;
-        } catch (e) {
-            showNotification("Server not reachable.", "error");
-        }
-    });
-}
-
-if (disconnectMailBtn) {
-    disconnectMailBtn.addEventListener('click', async () => {
-        try {
-            await fetch(`${API_BASE}/calendar/disconnect`, { method: "POST" });
-            showNotification("Google account disconnected.", "info");
-            refreshNotificationsStatus();
-        } catch (e) {
-            showNotification("Server not reachable.", "error");
-        }
-    });
-}
-
 async function refreshNotificationsStatus() {
     if (!notificationsStatus) return;
-    try {
-        const res = await fetch(`${API_BASE}/calendar/status`);
-        const data = await res.json();
+    const accessToken = localStorage.getItem('google_access_token');
+    if (!accessToken) {
+        notificationsStatus.textContent = "Not connected.";
+        if (connectMailBtn) connectMailBtn.style.display = "inline-block";
+        if (disconnectMailBtn) disconnectMailBtn.style.display = "none";
+        if (messagesList) messagesList.innerHTML = "";
+        return;
+    }
 
-        if (data.connected) {
+    try {
+        // Token-Validierung direkt an Google senden
+        const response = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${accessToken}`);
+        if (response.ok) {
             notificationsStatus.textContent = "Connected to Google Mail.";
             if (connectMailBtn) connectMailBtn.style.display = "none";
             if (disconnectMailBtn) disconnectMailBtn.style.display = "inline-block";
             loadMessages();
         } else {
-            notificationsStatus.textContent = "Not connected.";
-            if (connectMailBtn) connectMailBtn.style.display = "inline-block";
-            if (disconnectMailBtn) disconnectMailBtn.style.display = "none";
-            if (messagesList) messagesList.innerHTML = "";
+            throw new Error('Token invalid');
         }
     } catch (e) {
-        notificationsStatus.textContent = "Could not reach server.";
+        notificationsStatus.textContent = "Not connected.";
+        if (connectMailBtn) connectMailBtn.style.display = "inline-block";
+        if (disconnectMailBtn) disconnectMailBtn.style.display = "none";
+        localStorage.removeItem('google_access_token');
+        localStorage.removeItem('google_refresh_token');
     }
 }
 
 async function loadMessages() {
     if (!messagesList) return;
+    const accessToken = localStorage.getItem('google_access_token');
+    if (!accessToken) {
+        messagesList.innerHTML = "<li>Not connected to Google Mail.</li>";
+        return;
+    }
+
     try {
-        const res = await fetch(`${API_BASE}/notifications/messages`);
-        const data = await res.json();
-
-        if (!res.ok) {
-            messagesList.innerHTML = `<li>${data.error ?? "Could not load messages."}</li>`;
-            return;
+        // API-Anfrage direkt an Google senden
+        const response = await fetch(
+            `https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=5`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+        if (!response.ok) {
+            throw new Error('Failed to fetch messages');
         }
-
+        const data = await response.json();
         messagesList.innerHTML = "";
         if (!data.messages || data.messages.length === 0) {
             messagesList.innerHTML = "<li>No messages found.</li>";
             return;
         }
-
-        data.messages.forEach(message => {
+        // Nachrichten-Details abrufen
+        for (const message of data.messages) {
+            const msgResponse = await fetch(
+                `https://www.googleapis.com/gmail/v1/users/me/messages/${message.id}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                }
+            );
+            if (!msgResponse.ok) continue;
+            const msgData = await msgResponse.json();
             const li = document.createElement("li");
-
-            const subject = document.createElement("span");
-            subject.className = "message-subject";
-            subject.textContent = message.subject;
-            li.appendChild(subject);
-
-            const from = document.createElement("span");
-            from.className = "message-from";
-            from.textContent = message.from;
-            li.appendChild(from);
-
-            const snippet = document.createElement("span");
-            snippet.className = "message-snippet";
-            snippet.textContent = message.snippet;
-            li.appendChild(snippet);
-
+            const subject = msgData.payload?.headers?.find(h => h.name === "Subject")?.value || "(no subject)";
+            const from = msgData.payload?.headers?.find(h => h.name === "From")?.value || "(unknown sender)";
+            const snippet = msgData.snippet || "";
+            li.innerHTML = `<strong>${subject}</strong><br>${from}<br><small>${snippet}</small>`;
             messagesList.appendChild(li);
-        });
+        }
     } catch (e) {
-        messagesList.innerHTML = "<li>Server not reachable.</li>";
+        messagesList.innerHTML = "<li>Failed to load messages.</li>";
+        console.error('Error loading messages:', e);
     }
 }
 
-// Nach OAuth-Redirect zurück von Google: Status prüfen und Meldung anzeigen
+// OAuth-Redirect-Parameter verarbeiten
 function handleGoogleRedirectParams() {
     const params = new URLSearchParams(window.location.search);
-    if (params.has("google_connected")) {
-        showNotification("Google Calendar connected successfully.", "success");
-        history.replaceState(null, "", window.location.pathname);
-    } else if (params.has("google_error")) {
-        showNotification("Google Calendar connection failed: " + params.get("google_error"), "error");
-        history.replaceState(null, "", window.location.pathname);
+    const code = params.get('code');
+    const scope = params.get('scope');
+    const error = params.get('error');
+
+    if (error) {
+        showNotification(`Google OAuth error: ${error}`);
+        return;
+    }
+
+    if (code && scope) {
+        // Token-Austausch direkt im Browser (ohne Backend)
+        const oauth2Client = google.accounts.oauth2.initCodeClient({
+            client_id: CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
+            redirect_uri: `${window.location.origin}/settings.html`,
+            code_verifier: '', // Wird automatisch generiert
+            callback: (tokenResponse) => {
+                if (tokenResponse.access_token) {
+                    localStorage.setItem('google_access_token', tokenResponse.access_token);
+                    localStorage.setItem('google_refresh_token', tokenResponse.refresh_token || '');
+                    showNotification('Google account connected!');
+                    refreshCalendarStatus();
+                    refreshNotificationsStatus();
+                } else {
+                    showNotification('Failed to connect Google account.');
+                }
+            },
+        });
+        oauth2Client.requestCode();
     }
 }
 

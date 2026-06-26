@@ -270,6 +270,13 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        # Blockiere Zugriff auf .env-Datei
+        if path == "/.env" or path.endswith(".env"):
+            self.send_response(403)
+            self.send_cors_headers()
+            self.end_headers()
+            return
+
         if path == "/load":
             if os.path.exists("settings.json"):
                 with open("settings.json", "r") as f:
