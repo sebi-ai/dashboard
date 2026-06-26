@@ -258,6 +258,12 @@ input[type="color"] {
   background: none;
 }
 
+input[type="color"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+  border-color: rgba(0, 2, 131, 0.3);
+}
+
 input[type="color"]:hover {
   border-color: rgb(0, 2, 131);
   transform: scale(1.1);

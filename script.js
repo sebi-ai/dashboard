@@ -234,6 +234,7 @@ async function loadSettings() {
 
         if (s.theme)       document.getElementById("theme-select").value = s.theme;
         if (s.customColor) document.getElementById("custom-color").value = s.customColor;
+        applyThemeCustomColorExclusivity();
 
         if (s.stockCryptoSelection) {
             stockCryptoSelection = s.stockCryptoSelection;
@@ -745,3 +746,35 @@ if (saveStockCryptoBtn && stockCryptoWindow) {
         updateModalOverlay();
     });
 }
+
+// --- Theme select / custom color: mutually exclusive ---
+
+const themeSelect = document.getElementById("theme-select");
+const customColorInput = document.getElementById("custom-color");
+
+function applyThemeCustomColorExclusivity() {
+    if (!themeSelect || !customColorInput) return;
+    // Ein echtes Theme ist gewählt (nicht die leere "Choose an option")
+    // -> Custom-Color-Picker deaktivieren.
+    customColorInput.disabled = !!themeSelect.value;
+}
+
+if (themeSelect) {
+    themeSelect.addEventListener("change", function () {
+        applyThemeCustomColorExclusivity();
+    });
+}
+
+if (customColorInput) {
+    customColorInput.addEventListener("input", function () {
+        // Sobald eine eigene Farbe gewählt wird, Theme-Auswahl zurücksetzen.
+        if (themeSelect && themeSelect.value) {
+            themeSelect.value = "";
+            applyThemeCustomColorExclusivity();
+        }
+    });
+}
+
+// Zustand direkt beim Laden der Seite einmal anwenden (falls schon ein
+// Theme aus settings.json gesetzt wurde, bevor der Nutzer etwas anklickt).
+applyThemeCustomColorExclusivity();
