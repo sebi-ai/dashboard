@@ -309,6 +309,13 @@ async function loadSettings() {
 
         if (s.theme)       document.getElementById("theme-select").value = s.theme;
         if (s.customColor) document.getElementById("custom-color").value = s.customColor;
+        if (s.themeMode === "custom") {
+            document.getElementById("theme-mode-custom").checked = true;
+            document.getElementById("theme-mode-preset").checked = false;
+        } else if (s.themeMode === "preset") {
+            document.getElementById("theme-mode-preset").checked = true;
+            document.getElementById("theme-mode-custom").checked = false;
+        }
 
         if (s.stockCryptoSelection) {
             stockCryptoSelection = s.stockCryptoSelection;
@@ -405,6 +412,23 @@ const textfeld = document.getElementById("location");
 if (checkbox && textfeld) {
     checkbox.addEventListener("change", function() {
         textfeld.disabled = checkbox.checked;
+    });
+}
+
+const themeModePreset = document.getElementById("theme-mode-preset");
+const themeModeCustom = document.getElementById("theme-mode-custom");
+
+if (themeModePreset && themeModeCustom) {
+    themeModePreset.addEventListener("change", () => {
+        if (themeModePreset.checked) {
+            themeModeCustom.checked = false;
+        }
+    });
+
+    themeModeCustom.addEventListener("change", () => {
+        if (themeModeCustom.checked) {
+            themeModePreset.checked = false;
+        }
     });
 }
 
@@ -558,8 +582,15 @@ if (saveSettingsBtn) {
             stockCrypto: document.getElementById("stock-crypto-widget").checked,
         },
     starredWidget: document.querySelector('input[name="widget-star"]:checked')?.id ?? null,
-    theme: document.getElementById("theme-select").value,
-    customColor: document.getElementById("custom-color").value,
+    theme: document.getElementById("theme-mode-preset").checked
+        ? document.getElementById("theme-select").value
+        : null,
+    customColor: document.getElementById("theme-mode-custom").checked
+        ? document.getElementById("custom-color").value
+        : null,
+    themeMode: document.getElementById("theme-mode-custom").checked
+        ? "custom"
+        : (document.getElementById("theme-mode-preset").checked ? "preset" : null),
     countdownDate: document.getElementById("countdown-date").value,
     stockCryptoSelection: stockCryptoSelection
         };

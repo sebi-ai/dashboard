@@ -136,6 +136,18 @@ h1, h2, h3, h4, h5, h6, button {
   box-shadow: 0 10px 30px rgba(0, 2, 131, 0.3);
 }
 
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  margin-bottom: 6px;
+}
+
+.theme-option label {
+  margin: 0;
+}
+
 input[type="text"] {
   border: 2px solid rgb(0, 2, 131);
   border-radius: 15px;
