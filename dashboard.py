@@ -1,370 +1,902 @@
-from __future__ import annotations
+"""
+dashboard.py — Python-Tkinter Dashboard
+Liest settings.json und zeigt die aktivierten Widgets mit den gespeicherten
+Theme-Farben an. Starte zuerst server.py, damit Kalender- und
+Gmail-Widgets funktionieren.
 
+Starten:
+    python3 dashboard.py
+
+Abhängigkeiten (alle schon in requirements.txt):
+    pip install requests
+Optional für Wetter-Fallback ohne Koordinaten:
+    pip install requests
+
+Tastenkürzel:
+    ESC       → Vollbild beenden
+    F11       → Vollbild wieder aktivieren
+    R         → Daten manuell neu laden
+    Q         → Dashboard schließen
+"""
+
+import json
+import os
 import sys
 import threading
+import time
+import tkinter as tk
 from datetime import datetime
-from zoneinfo import ZoneInfo
+from tkinter import font as tkfont
 
-import requests
-from PySide6 import QtCore, QtWidgets, QtGui
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
 
-APP_TITLE = "Stardance Dashboard (Native)"
-DEFAULT_TIMEZONE = "Europe/Berlin"
 
-
-WEATHER_CODE_MAP = {
-    0: ("Clear sky", "☀️"),
-    1: ("Mainly clear", "🌤️"),
-    2: ("Partly cloudy", "⛅"),
-    3: ("Cloudy", "☁️"),
-    45: ("Fog", "🌫️"),
-    48: ("Depositing rime fog", "🌫️"),
-    51: ("Light drizzle", "🌦️"),
-    53: ("Drizzle", "🌦️"),
-    55: ("Dense drizzle", "🌧️"),
-    61: ("Slight rain", "🌦️"),
-    63: ("Rain", "🌧️"),
-    65: ("Heavy rain", "🌧️"),
-    66: ("Freezing rain", "🧊"),
-    67: ("Heavy freezing rain", "🧊"),
-    71: ("Slight snow fall", "🌨️"),
-    73: ("Snow fall", "🌨️"),
-    75: ("Heavy snow fall", "❄️"),
-    77: ("Snow grains", "🌨️"),
-    80: ("Slight rain showers", "🌦️"),
-    81: ("Rain showers", "🌧️"),
-    82: ("Violent rain showers", "⛈️"),
-    85: ("Slight snow showers", "🌨️"),
-    86: ("Heavy snow showers", "❄️"),
-    95: ("Thunderstorm", "⛈️"),
-    96: ("Thunderstorm with hail", "⛈️"),
-    99: ("Heavy thunderstorm with hail", "⛈️"),
+WEATHER_CODES = {
+    0:  ("Klarer Himmel",      "☀"),
+    1:  ("Überwiegend klar",   "🌤"),
+    2:  ("Teils bewölkt",      "⛅"),
+    3:  ("Bedeckt",            "☁"),
+    45: ("Nebel",              "🌫"),
+    48: ("Gefrierender Nebel", "🌫"),
+    51: ("Leichter Niesel",    "🌧"),
+    53: ("Mäßiger Niesel",     "🌧"),
+    55: ("Starker Niesel",     "🌧"),
+    61: ("Leichter Regen",     "🌧"),
+    63: ("Mäßiger Regen",      "🌧"),
+    65: ("Starker Regen",      "🌧"),
+    71: ("Leichter Schnee",    "❄"),
+    73: ("Mäßiger Schnee",     "❄"),
+    75: ("Starker Schnee",     "❄"),
+    77: ("Schneekörner",       "❄"),
+    80: ("Leichte Schauer",    "🌦"),
+    81: ("Mäßige Schauer",     "🌦"),
+    82: ("Heftige Schauer",    "⛈"),
+    85: ("Leichte Schneeschauer", "🌨"),
+    86: ("Starke Schneeschauer",  "🌨"),
+    95: ("Gewitter",           "⛈"),
+    96: ("Gewitter m. Hagel",  "⛈"),
+    99: ("Starkes Gewitter",   "⛈"),
 }
 
 
-def weather_label(code: int) -> tuple[str, str]:
-    return WEATHER_CODE_MAP.get(code, (f"Weather code {code}", "🌡️"))
+THEMES = {
+    "default": {
+        "bg":         "#0d0d1a",
+        "widget_bg":  "#16162a",
+        "accent":     "#00d4ff",
+        "text":       "#e0e0ff",
+        "border":     "#2a2a50",
+        "muted":      "#6666aa",
+        "positive":   "#00ff88",
+        "negative":   "#ff4466",
+    },
+    "ocean": {
+        "bg":         "#080e1a",
+        "widget_bg":  "#0f1e30",
+        "accent":     "#00b4d8",
+        "text":       "#caf0f8",
+        "border":     "#1a3050",
+        "muted":      "#5588aa",
+        "positive":   "#00e5b0",
+        "negative":   "#ff5555",
+    },
+    "forest": {
+        "bg":         "#080f08",
+        "widget_bg":  "#0f1e12",
+        "accent":     "#52b788",
+        "text":       "#d8f3dc",
+        "border":     "#1e3d25",
+        "muted":      "#558866",
+        "positive":   "#74c69d",
+        "negative":   "#ff6b6b",
+    },
+    "sunset": {
+        "bg":         "#180800",
+        "widget_bg":  "#261200",
+        "accent":     "#ff7b35",
+        "text":       "#ffe8d6",
+        "border":     "#552200",
+        "muted":      "#aa6644",
+        "positive":   "#ffbb44",
+        "negative":   "#ff3333",
+    },
+    "cyberpunk": {
+        "bg":         "#080010",
+        "widget_bg":  "#10001e",
+        "accent":     "#ff00ff",
+        "text":       "#00ffff",
+        "border":     "#3a0060",
+        "muted":      "#882288",
+        "positive":   "#00ff88",
+        "negative":   "#ff2244",
+    },
+    "ice": {
+        "bg":         "#080816",
+        "widget_bg":  "#12182a",
+        "accent":     "#90caf9",
+        "text":       "#e8f4ff",
+        "border":     "#1e2e48",
+        "muted":      "#4466aa",
+        "positive":   "#66ddff",
+        "negative":   "#ff6688",
+    },
+    "midnight": {
+        "bg":         "#030008",
+        "widget_bg":  "#0a0018",
+        "accent":     "#9b59b6",
+        "text":       "#dda0ff",
+        "border":     "#25004a",
+        "muted":      "#6a308a",
+        "positive":   "#a855f7",
+        "negative":   "#ff4488",
+    },
+}
+
+STAR_MAP = {
+    "weather-widget-star":      "weather",
+    "notifications-widget-star": "notifications",
+    "date-time-widget-star":    "dateTime",
+    "countdown-widget-star":    "countdown",
+    "calendar-widget-star":     "calendar",
+    "stock-crypto-widget-star": "stockCrypto",
+}
+
+SERVER_URL = "http://localhost:8000"
 
 
-def fetch_location() -> dict:
-    response = requests.get("https://ipwho.is/", timeout=10)
-    response.raise_for_status()
-    data = response.json()
-    if not data.get("success", False):
-        raise RuntimeError(data.get("message", "Location data could not be loaded."))
-
-    return {
-        "city": data.get("city") or "Unbekannt",
-        "region": data.get("region") or "",
-        "country": data.get("country") or "",
-        "latitude": data["latitude"],
-        "longitude": data["longitude"],
-        "timezone": data.get("timezone", {}).get("id") or DEFAULT_TIMEZONE,
-        "ip": data.get("ip", ""),
-    }
 
 
-def fetch_weather(latitude: float, longitude: float, timezone: str) -> dict:
-    url = (
-        "https://api.open-meteo.com/v1/forecast"
-        f"?latitude={latitude}&longitude={longitude}"
-        "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m"
-        f"&timezone={timezone}"
-    )
-    response = requests.get(url, timeout=10)
-    response.raise_for_status()
-    return response.json()
-
-
-class FetchThread(QtCore.QThread):
-    data_ready = QtCore.Signal(object)
-    error = QtCore.Signal(str)
-
-    def run(self) -> None:  # pragma: no cover - network
+def load_settings() -> dict:
+    """Lädt settings.json aus dem gleichen Verzeichnis wie dashboard.py."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "settings.json")
+    if os.path.exists(path):
         try:
-            location = fetch_location()
-            weather = fetch_weather(location["latitude"], location["longitude"], location["timezone"])
-            self.data_ready.emit({"location": location, "weather": weather})
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
         except Exception as e:
-            self.error.emit(str(e))
+            print(f"[dashboard] settings.json Ladefehler: {e}")
+    return {}
 
 
-class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self) -> None:
-        super().__init__()
-        self.setWindowTitle(APP_TITLE)
-        self.resize(1000, 600)
+def extract_colors(settings: dict) -> dict:
+    """
+    Liest Farbwerte aus settings.json.
+    Unterstützt: theme-Name, primaryColor / accentColor / customColor / backgroundColor.
+    Fällt auf das Default-Theme zurück, wenn keine Farben gesetzt sind.
+    """
+    theme_name = settings.get("theme", "default")
+    base = THEMES.get(theme_name, THEMES["default"]).copy()
 
-        central = QtWidgets.QWidget()
-        self.setCentralWidget(central)
-        main_layout = QtWidgets.QHBoxLayout(central)
-        main_layout.setStretch(0, 2)
-        main_layout.setStretch(1, 1)
+    overrides = {
+        "accent": (
+            settings.get("accentColor")
+            or settings.get("primaryColor")
+            or settings.get("customColor")
+            or settings.get("themeColor")
+        ),
+        "bg": (
+            settings.get("backgroundColor")
+            or settings.get("bgColor")
+        ),
+        "text":   settings.get("textColor"),
+        "widget_bg": (
+            settings.get("widgetBgColor")
+            or settings.get("cardColor")
+            or settings.get("cardBgColor")
+        ),
+        "border": settings.get("borderColor"),
+        "muted":  settings.get("secondaryTextColor") or settings.get("mutedColor"),
+    }
+    for key, val in overrides.items():
+        if val and isinstance(val, str) and val.startswith("#"):
+            base[key] = val
 
-        # Left: big clock
-        self.left_frame = QtWidgets.QFrame()
-        self.left_frame.setObjectName("glassCard")
-        self.left_frame.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
-        left_layout = QtWidgets.QVBoxLayout(self.left_frame)
-        left_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        left_layout.setSpacing(8)
+    return base
 
-        self.time_title = QtWidgets.QLabel("Time")
-        self.time_title.setStyleSheet("color: rgba(255,255,255,0.72); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;")
-        left_layout.addWidget(self.time_title)
 
-        self.time_label = QtWidgets.QLabel("--:--:--")
-        time_font = QtGui.QFont("Segoe UI", 96, QtGui.QFont.Weight.Bold)
-        self.time_label.setFont(time_font)
-        self.time_label.setStyleSheet("color: rgba(255,255,255,0.9);")
-        self.time_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        left_layout.addWidget(self.time_label)
+def run_in_thread(func, *args, daemon=True):
+    t = threading.Thread(target=func, args=args, daemon=daemon)
+    t.start()
+    return t
 
-        self.date_label = QtWidgets.QLabel("—")
-        date_font = QtGui.QFont("Segoe UI", 12)
-        self.date_label.setFont(date_font)
-        self.date_label.setStyleSheet("color: rgba(255,255,255,0.78);")
-        left_layout.addWidget(self.date_label)
 
-        main_layout.addWidget(self.left_frame, 2)
+class BaseWidget:
+    """Jedes Widget erbt hiervon und implementiert build() und fetch_data()."""
 
-        # Right: compact weather summary
-        right_frame = QtWidgets.QFrame()
-        right_frame.setMinimumWidth(320)
-        right_frame.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Expanding)
-        right_layout = QtWidgets.QVBoxLayout(right_frame)
+    REFRESH_INTERVAL = 60  
 
-        # Weather card
-        card = QtWidgets.QFrame()
-        card.setObjectName("glassCard")
-        card_layout = QtWidgets.QVBoxLayout(card)
+    def __init__(self, parent: tk.Frame, colors: dict, big: bool = False, settings: dict = None):
+        self.parent   = parent
+        self.colors   = colors
+        self.big      = big
+        self.settings = settings or {}
+        self._alive   = True
 
-        weather_title = QtWidgets.QLabel("Weather")
-        weather_title.setStyleSheet("color: rgba(255,255,255,0.72); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;")
-        card_layout.addWidget(weather_title)
+        self.frame = tk.Frame(
+            parent,
+            bg=colors["widget_bg"],
+            highlightbackground=colors["border"],
+            highlightthickness=1,
+        )
+        self.frame.pack(fill="both", expand=big, padx=0, pady=(0, 10))
 
-        self.location_label = QtWidgets.QLabel("Location: —")
-        self.location_label.setStyleSheet("color: rgba(255,255,255,0.9); font-weight:600;")
-        card_layout.addWidget(self.location_label)
+        self.inner = tk.Frame(self.frame, bg=colors["widget_bg"])
+        self.inner.pack(fill="both", expand=True, padx=14, pady=10)
 
-        self.weather_main = QtWidgets.QLabel("—")
-        weather_font = QtGui.QFont("Segoe UI", 18, QtGui.QFont.Weight.DemiBold)
-        self.weather_main.setFont(weather_font)
-        card_layout.addWidget(self.weather_main)
+        self.build()
+        self._schedule_refresh()
 
-        self.now_label = QtWidgets.QLabel("—")
-        now_font = QtGui.QFont("Segoe UI", 32, QtGui.QFont.Weight.Bold)
-        self.now_label.setFont(now_font)
-        self.now_label.setStyleSheet("color: rgba(255,255,255,0.85);")
-        card_layout.addWidget(self.now_label)
+    
+    def header(self, icon: str, title: str):
+        h = tk.Frame(self.inner, bg=self.colors["widget_bg"])
+        h.pack(fill="x", pady=(0, 6))
+        tk.Label(
+            h,
+            text=f"{icon}  {title}",
+            font=("Courier", 10, "bold"),
+            bg=self.colors["widget_bg"],
+            fg=self.colors["accent"],
+        ).pack(side="left")
+        tk.Frame(self.inner, height=1, bg=self.colors["border"]).pack(fill="x", pady=(0, 8))
 
-        self.feels_label = QtWidgets.QLabel("Feels like: —")
-        feels_font = QtGui.QFont("Segoe UI", 11)
-        self.feels_label.setFont(feels_font)
-        self.feels_label.setStyleSheet("color: rgba(255,255,255,0.65);")
-        card_layout.addWidget(self.feels_label)
+    def label(self, parent, text="", font_size=12, bold=False, color_key="text", anchor="center") -> tk.Label:
+        weight = "bold" if bold else "normal"
+        lbl = tk.Label(
+            parent,
+            text=text,
+            font=("Courier", font_size, weight),
+            bg=self.colors["widget_bg"],
+            fg=self.colors[color_key],
+            anchor=anchor,
+        )
+        lbl.pack(fill="x" if anchor == "w" else None)
+        return lbl
 
-        self.wind_label = QtWidgets.QLabel("Wind: — | Humidity: —")
-        self.wind_label.setStyleSheet("color: rgba(255,255,255,0.75);")
-        card_layout.addWidget(self.wind_label)
+    def muted_label(self, parent, text="", font_size=10, anchor="center") -> tk.Label:
+        lbl = tk.Label(
+            parent,
+            text=text,
+            font=("Courier", font_size),
+            bg=self.colors["widget_bg"],
+            fg=self.colors["muted"],
+            anchor=anchor,
+        )
+        lbl.pack(fill="x" if anchor == "w" else None)
+        return lbl
 
-        right_layout.addWidget(card)
+    def build(self):
+        """Erstellt das Widget-Layout. Muss überschrieben werden."""
 
-        right_layout.addStretch()
+    def fetch_data(self):
+        """Holt Daten und aktualisiert Labels. Läuft im Hintergrund-Thread."""
 
-        # status
-        self.status = QtWidgets.QLabel("")
-        self.status.setStyleSheet("color: rgba(255,255,255,0.65); font-size: 12px;")
-        right_layout.addWidget(self.status)
-
-        main_layout.addWidget(right_frame, 1)
-
-        # global stylesheet for modern look
-        self.setStyleSheet("""
-        QMainWindow { background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #041018, stop:1 #071526); }
-        #glassCard { background: rgba(255,255,255,0.04); border-radius: 12px; padding: 12px; border: 1px solid rgba(255,255,255,0.06); }
-        QTableWidget { background: rgba(255,255,255,0.02); color: rgba(234,242,255,0.95); border-radius: 8px; }
-        QHeaderView::section { background: transparent; color: rgba(255,255,255,0.72); }
-        """)
-
-        self.setStatusBar(QtWidgets.QStatusBar(self))
-        self.statusBar().setSizeGripEnabled(False)
-        self.statusBar().hide()
-
-        # timers
-        self.time_zone = DEFAULT_TIMEZONE
-        self.local_now = datetime.now(ZoneInfo(self.time_zone))
-
-        self.clock_timer = QtCore.QTimer(self)
-        self.clock_timer.timeout.connect(self.update_clock)
-        self.clock_timer.start(1000)
-
-        self.fetch_timer = QtCore.QTimer(self)
-        self.fetch_timer.timeout.connect(self.start_fetch)
-        self.fetch_timer.start(60_000)  # fetch every 60s
-
-        self.tray_icon = QSystemTray(self)
-
-        self._update_clock_font()
-
-        self.start_fetch()
-
-    def update_clock(self) -> None:
-        try:
-            now = datetime.now(ZoneInfo(self.time_zone))
-        except Exception:
-            now = datetime.now(ZoneInfo(DEFAULT_TIMEZONE))
-        self.time_label.setText(now.strftime('%H:%M:%S'))
-        self.date_label.setText(now.strftime('%A, %B %d, %Y'))
-
-    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
-        super().resizeEvent(event)
-        self._update_clock_font()
-
-    def _update_clock_font(self) -> None:
-        available = self.left_frame.contentsRect()
-        if available.width() <= 0 or available.height() <= 0:
+    def _schedule_refresh(self):
+        if not HAS_REQUESTS:
             return
 
-        font = self.time_label.font()
-        font.setWeight(QtGui.QFont.Weight.Bold)
+        def loop():
+            while self._alive:
+                try:
+                    self.fetch_data()
+                except Exception as exc:
+                    print(f"[{self.__class__.__name__}] refresh error: {exc}")
+                time.sleep(self.REFRESH_INTERVAL)
 
-        margins = self.left_frame.layout().contentsMargins()
-        title_height = self.time_title.sizeHint().height()
-        date_height = self.date_label.sizeHint().height()
-        spacing = self.left_frame.layout().spacing()
+        run_in_thread(loop)
 
-        target_width = max(available.width() - margins.left() - margins.right() - 20, 1)
-        target_height = max(
-            available.height()
-            - margins.top()
-            - margins.bottom()
-            - title_height
-            - date_height
-            - (spacing * 2)
-            - 24,
-            1,
+    def destroy(self):
+        self._alive = False
+
+
+class DateTimeWidget(BaseWidget):
+    REFRESH_INTERVAL = 999999  
+
+    def build(self):
+        self.header("🕐", "DATE & TIME")
+
+        time_fs  = 60 if self.big else 32
+        date_fs  = 16 if self.big else 12
+
+        self.lbl_time = tk.Label(
+            self.inner, text="--:--:--",
+            font=("Courier", time_fs, "bold"),
+            bg=self.colors["widget_bg"], fg=self.colors["text"],
         )
-        text = "88:88:88"
+        self.lbl_time.pack(pady=(6, 2))
 
-        low = 24
-        high = 260
-        best = low
+        self.lbl_date = tk.Label(
+            self.inner, text="",
+            font=("Courier", date_fs),
+            bg=self.colors["widget_bg"], fg=self.colors["accent"],
+        )
+        self.lbl_date.pack()
 
-        while low <= high:
-            size = (low + high) // 2
-            font.setPointSize(size)
-            metrics = QtGui.QFontMetrics(font)
-            rect = metrics.boundingRect(text)
-            if rect.width() <= target_width and rect.height() <= target_height:
-                best = size
-                low = size + 1
+        if self.big:
+            self.lbl_day = tk.Label(
+                self.inner, text="",
+                font=("Courier", 13),
+                bg=self.colors["widget_bg"], fg=self.colors["muted"],
+            )
+            self.lbl_day.pack(pady=(4, 0))
+
+        self._tick()
+
+    def _tick(self):
+        now = datetime.now()
+        self.lbl_time.config(text=now.strftime("%H:%M:%S"))
+        self.lbl_date.config(text=now.strftime("%d. %B %Y"))
+        if self.big and hasattr(self, "lbl_day"):
+            self.lbl_day.config(text=now.strftime("%A"))
+        self.inner.after(1000, self._tick)
+
+
+class WeatherWidget(BaseWidget):
+    REFRESH_INTERVAL = 600  
+
+    def build(self):
+        self.header("🌤", "WETTER")
+
+        temp_fs = 52 if self.big else 30
+        self.lbl_temp = tk.Label(
+            self.inner, text="--°C",
+            font=("Courier", temp_fs, "bold"),
+            bg=self.colors["widget_bg"], fg=self.colors["text"],
+        )
+        self.lbl_temp.pack(pady=(6, 0))
+
+        self.lbl_desc = tk.Label(
+            self.inner, text="Lade Wetterdaten …",
+            font=("Courier", 13 if self.big else 10),
+            bg=self.colors["widget_bg"], fg=self.colors["accent"],
+        )
+        self.lbl_desc.pack(pady=(2, 4))
+
+        if self.big:
+            self.lbl_location = tk.Label(
+                self.inner, text="",
+                font=("Courier", 11),
+                bg=self.colors["widget_bg"], fg=self.colors["muted"],
+            )
+            self.lbl_location.pack()
+
+            self.lbl_details = tk.Label(
+                self.inner, text="",
+                font=("Courier", 11),
+                bg=self.colors["widget_bg"], fg=self.colors["muted"],
+            )
+            self.lbl_details.pack(pady=(4, 0))
+
+    def fetch_data(self):
+        if not HAS_REQUESTS:
+            return
+        coords = self.settings.get("coordinates") or {}
+        lat = coords.get("lat") or coords.get("latitude") or 48.137
+        lon = coords.get("lon") or coords.get("longitude") or 11.575
+        location_name = self.settings.get("location", "")
+
+        try:
+            r = requests.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude":  lat,
+                    "longitude": lon,
+                    "current": (
+                        "temperature_2m,weathercode,"
+                        "windspeed_10m,relative_humidity_2m,apparent_temperature"
+                    ),
+                    "wind_speed_unit": "kmh",
+                    "timezone": "auto",
+                },
+                timeout=10,
+            )
+            r.raise_for_status()
+            cur = r.json().get("current", {})
+
+            temp     = cur.get("temperature_2m", "--")
+            feels    = cur.get("apparent_temperature", "--")
+            code     = cur.get("weathercode", 0)
+            wind     = cur.get("windspeed_10m", "--")
+            humidity = cur.get("relative_humidity_2m", "--")
+            desc, icon = WEATHER_CODES.get(code, ("Unbekannt", "?"))
+
+            self.lbl_temp.config(text=f"{icon} {temp}°C")
+            self.lbl_desc.config(text=desc)
+
+            if self.big:
+                self.lbl_location.config(
+                    text=f"📍 {location_name}" if location_name else ""
+                )
+                self.lbl_details.config(
+                    text=(
+                        f"Gefühlt {feels}°C  •  "
+                        f"💨 {wind} km/h  •  "
+                        f"💧 {humidity}%"
+                    )
+                )
+        except Exception as exc:
+            self.lbl_desc.config(text=f"Fehler: {str(exc)[:40]}")
+
+
+
+class CalendarWidget(BaseWidget):
+    REFRESH_INTERVAL = 300  
+
+    def build(self):
+        self.header("📅", "KALENDER")
+        self.list_frame = tk.Frame(self.inner, bg=self.colors["widget_bg"])
+        self.list_frame.pack(fill="both", expand=True)
+        self._set_status("Kalender wird geladen …")
+
+    def fetch_data(self):
+        if not HAS_REQUESTS:
+            self._set_status("requests nicht installiert")
+            return
+        try:
+            r = requests.get(f"{SERVER_URL}/calendar/events", timeout=6)
+            if r.status_code == 401:
+                self._set_status("Google Kalender nicht verbunden.\nBitte in den Einstellungen verbinden.")
+                return
+            if r.status_code != 200:
+                self._set_status(f"Serverfehler: {r.status_code}")
+                return
+            events = r.json().get("events", [])
+            self._render_events(events)
+        except requests.exceptions.ConnectionError:
+            self._set_status("Server nicht erreichbar.\n→ server.py starten")
+        except Exception as exc:
+            self._set_status(f"Fehler: {str(exc)[:50]}")
+
+    def _render_events(self, events):
+        self._clear()
+        max_ev = 6 if self.big else 3
+        if not events:
+            self._set_status("Keine bevorstehenden Termine")
+            return
+        for ev in events[:max_ev]:
+            start_raw = (ev.get("start") or {}).get("dateTime") or (ev.get("start") or {}).get("date", "")
+            try:
+                dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+                start_fmt = dt.strftime("%d.%m  %H:%M")
+            except Exception:
+                start_fmt = start_raw[:10]
+            summary = ev.get("summary", "Ohne Titel")[:35]
+
+            row = tk.Frame(self.list_frame, bg=self.colors["widget_bg"])
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=f"▸ {start_fmt}", font=("Courier", 10),
+                    bg=self.colors["widget_bg"], fg=self.colors["accent"],
+                    width=14, anchor="w").pack(side="left")
+            tk.Label(row, text=summary, font=("Courier", 10),
+                    bg=self.colors["widget_bg"], fg=self.colors["text"],
+                    anchor="w").pack(side="left")
+
+    def _clear(self):
+        for w in self.list_frame.winfo_children():
+            w.destroy()
+
+    def _set_status(self, msg: str):
+        self._clear()
+        tk.Label(self.list_frame, text=msg, font=("Courier", 10),
+                bg=self.colors["widget_bg"], fg=self.colors["muted"],
+                justify="left", anchor="w").pack(fill="x")
+
+
+class StockCryptoWidget(BaseWidget):
+    REFRESH_INTERVAL = 120  
+
+    def build(self):
+        sel  = self.settings.get("stockCryptoSelection") or {}
+        self._sym  = sel.get("symbol", "BTC")
+        self._name = sel.get("name", "Bitcoin")
+        self._type = sel.get("type", "crypto")
+        self._cmc_id = sel.get("id")
+
+        icon = "₿" if self._type == "crypto" else "📈"
+        self.header(icon, "KURS")
+
+        self.lbl_name = tk.Label(
+            self.inner,
+            text=f"{self._sym}  —  {self._name}",
+            font=("Courier", 12 if self.big else 10, "bold"),
+            bg=self.colors["widget_bg"], fg=self.colors["accent"],
+        )
+        self.lbl_name.pack(pady=(2, 0))
+
+        price_fs = 42 if self.big else 24
+        self.lbl_price = tk.Label(
+            self.inner, text="-- USD",
+            font=("Courier", price_fs, "bold"),
+            bg=self.colors["widget_bg"], fg=self.colors["text"],
+        )
+        self.lbl_price.pack(pady=(8, 2))
+
+        self.lbl_change = tk.Label(
+            self.inner, text="",
+            font=("Courier", 12 if self.big else 10),
+            bg=self.colors["widget_bg"], fg=self.colors["muted"],
+        )
+        self.lbl_change.pack()
+
+        if self.big:
+            self.lbl_meta = tk.Label(
+                self.inner, text="",
+                font=("Courier", 10),
+                bg=self.colors["widget_bg"], fg=self.colors["muted"],
+            )
+            self.lbl_meta.pack(pady=(4, 0))
+
+    def fetch_data(self):
+        if not HAS_REQUESTS:
+            return
+        try:
+            if self._type == "crypto":
+                self._fetch_crypto()
             else:
-                high = size - 1
+                self._fetch_stock()
+        except Exception as exc:
+            self.lbl_price.config(text="Fehler")
+            self.lbl_change.config(text=str(exc)[:40], fg=self.colors["muted"])
 
-        font.setPointSize(best)
-        self.time_label.setFont(font)
+    def _fetch_crypto(self):
+        sym_lower = self._sym.lower()
+        r = requests.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={
+                "ids": sym_lower,
+                "vs_currencies": "usd",
+                "include_24hr_change": "true",
+                "include_market_cap": "true",
+            },
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
 
-    def start_fetch(self) -> None:
-        self.status.setText("Fetching data...")
-        self.thread = FetchThread()
-        self.thread.data_ready.connect(self.on_data)
-        self.thread.error.connect(self.on_error)
-        self.thread.start()
+        coin_data = data.get(sym_lower) or (list(data.values())[0] if data else {})
+        if not coin_data:
+            self.lbl_price.config(text="Nicht gefunden")
+            return
 
-    def on_data(self, payload: dict) -> None:
-        location = payload["location"]
-        weather = payload["weather"]
-        current = weather.get("current", {})
+        price  = coin_data.get("usd", 0)
+        change = coin_data.get("usd_24h_change", 0)
+        mcap   = coin_data.get("usd_market_cap", 0)
 
-        self.time_zone = location.get("timezone", DEFAULT_TIMEZONE)
+        self.lbl_price.config(text=f"${price:,.2f}")
+        sign  = "+" if change >= 0 else ""
+        color = self.colors["positive"] if change >= 0 else self.colors["negative"]
+        self.lbl_change.config(text=f"{sign}{change:.2f}%  (24 h)", fg=color)
+        if self.big and hasattr(self, "lbl_meta") and mcap:
+            self.lbl_meta.config(text=f"Market Cap: ${mcap:,.0f}")
 
-        location_label = ", ".join(part for part in [location["city"], location["region"], location["country"]] if part)
-        self.location_label.setText(f"{location_label}")
+    def _fetch_stock(self):
+        try:
+            from dotenv import dotenv_values
+            here = os.path.dirname(os.path.abspath(__file__))
+            env  = dotenv_values(os.path.join(here, ".env"))
+            api_key = env.get("ALPHA_VANTAGE_API_KEY")
+        except ImportError:
+            api_key = None
 
-        temp = current.get("temperature_2m")
-        apparent = current.get("apparent_temperature")
-        ws = current.get("wind_speed_10m")
-        hum = current.get("relative_humidity_2m")
-        code_value = current.get("weather_code")
-        code = int(code_value) if code_value is not None else 0
-        label, emoji = weather_label(code)
-
-        if temp is not None:
-            self.weather_main.setText(f"{emoji}  {label}")
-            self.now_label.setText(f"{temp:.1f} °C")
-            if apparent is not None:
-                self.feels_label.setText(f"Feels like: {apparent:.1f} °C")
-            else:
-                self.feels_label.setText("Feels like: —")
+        if api_key:
+            r = requests.get(
+                "https://www.alphavantage.co/query",
+                params={
+                    "function": "GLOBAL_QUOTE",
+                    "symbol":   self._sym,
+                    "apikey":   api_key,
+                },
+                timeout=10,
+            )
+            r.raise_for_status()
+            q = r.json().get("Global Quote", {})
+            price  = float(q.get("05. price", 0) or 0)
+            change = float(q.get("10. change percent", "0%").replace("%", "") or 0)
+            self.lbl_price.config(text=f"${price:,.2f}")
+            sign  = "+" if change >= 0 else ""
+            color = self.colors["positive"] if change >= 0 else self.colors["negative"]
+            self.lbl_change.config(text=f"{sign}{change:.2f}%", fg=color)
         else:
-            self.weather_main.setText(f"{emoji}  {label}")
-            self.now_label.setText("—")
-            self.feels_label.setText("Feels like: —")
+            self.lbl_price.config(text=f"{self._sym}")
+            self.lbl_change.config(
+                text="Alpha Vantage Key fehlt in .env\n→ browser öffnen",
+                fg=self.colors["muted"],
+            )
 
-        if ws is not None and hum is not None:
-            self.wind_label.setText(f"Wind: {ws:.0f} km/h  •  Humidity: {hum:.0f}%")
-        elif ws is not None:
-            self.wind_label.setText(f"Wind: {ws:.0f} km/h")
-        elif hum is not None:
-            self.wind_label.setText(f"Humidity: {hum:.0f}%")
+
+class NotificationsWidget(BaseWidget):
+    REFRESH_INTERVAL = 180  
+
+    def build(self):
+        self.header("📬", "NACHRICHTEN")
+        self.list_frame = tk.Frame(self.inner, bg=self.colors["widget_bg"])
+        self.list_frame.pack(fill="both", expand=True)
+        self._set_status("Nachrichten werden geladen …")
+
+    def fetch_data(self):
+        if not HAS_REQUESTS:
+            self._set_status("requests nicht installiert")
+            return
+        try:
+            r = requests.get(f"{SERVER_URL}/notifications/messages", timeout=8)
+            if r.status_code == 401:
+                self._set_status("Gmail nicht verbunden.\nBitte in den Einstellungen verbinden.")
+                return
+            if r.status_code == 403:
+                self._set_status("Keine Gmail-Berechtigung.\nBitte Konto neu verbinden.")
+                return
+            if r.status_code != 200:
+                self._set_status(f"Serverfehler: {r.status_code}")
+                return
+            messages = r.json().get("messages", [])
+            self._render_messages(messages)
+        except requests.exceptions.ConnectionError:
+            self._set_status("Server nicht erreichbar.\n→ server.py starten")
+        except Exception as exc:
+            self._set_status(f"Fehler: {str(exc)[:50]}")
+
+    def _render_messages(self, messages):
+        self._clear()
+        max_msg = 6 if self.big else 3
+        if not messages:
+            self._set_status("Keine neuen Nachrichten")
+            return
+        for msg in messages[:max_msg]:
+            is_unread = msg.get("unread", False)
+            row = tk.Frame(self.list_frame, bg=self.colors["widget_bg"])
+            row.pack(fill="x", pady=2)
+
+            dot_color = self.colors["accent"] if is_unread else self.colors["muted"]
+            tk.Label(row, text="●" if is_unread else "○",
+                    font=("Courier", 10), bg=self.colors["widget_bg"],
+                    fg=dot_color, width=2).pack(side="left")
+
+            info = tk.Frame(row, bg=self.colors["widget_bg"])
+            info.pack(side="left", fill="x", expand=True)
+
+            from_str = (msg.get("from") or "")[:28]
+            subj_str = (msg.get("subject") or "(kein Betreff)")[:38]
+
+            tk.Label(info, text=from_str, font=("Courier", 9, "bold"),
+                    bg=self.colors["widget_bg"],
+                    fg=self.colors["text"] if is_unread else self.colors["muted"],
+                    anchor="w").pack(fill="x")
+            tk.Label(info, text=subj_str, font=("Courier", 9),
+                    bg=self.colors["widget_bg"], fg=self.colors["muted"],
+                    anchor="w").pack(fill="x")
+
+    def _clear(self):
+        for w in self.list_frame.winfo_children():
+            w.destroy()
+
+    def _set_status(self, msg: str):
+        self._clear()
+        tk.Label(self.list_frame, text=msg, font=("Courier", 10),
+                bg=self.colors["widget_bg"], fg=self.colors["muted"],
+                justify="left", anchor="w").pack(fill="x")
+
+
+class CountdownWidget(BaseWidget):
+    REFRESH_INTERVAL = 999999
+
+    def build(self):
+        self.header("⏳", "COUNTDOWN")
+
+        cd = self.settings.get("countdown") or {}
+        self._label_text  = cd.get("label") or cd.get("name") or "Event"
+        self._target_date = cd.get("date") or cd.get("targetDate") or ""
+        
+        if not self._target_date:
+            self._target_date = (
+                self.settings.get("countdownDate")
+                or self.settings.get("countdown_date")
+                or ""
+            )
+        if self._label_text == "Event":
+            self._label_text = (
+                self.settings.get("countdownLabel")
+                or self.settings.get("countdown_label")
+                or "Event"
+            )
+
+        self.lbl_event = tk.Label(
+            self.inner, text=self._label_text,
+            font=("Courier", 14 if self.big else 11),
+            bg=self.colors["widget_bg"], fg=self.colors["accent"],
+        )
+        self.lbl_event.pack(pady=(4, 0))
+
+        cd_fs = 32 if self.big else 20
+        self.lbl_cd = tk.Label(
+            self.inner, text="-- Tage",
+            font=("Courier", cd_fs, "bold"),
+            bg=self.colors["widget_bg"], fg=self.colors["text"],
+        )
+        self.lbl_cd.pack(pady=10)
+
+        self.lbl_date = tk.Label(
+            self.inner, text="",
+            font=("Courier", 10),
+            bg=self.colors["widget_bg"], fg=self.colors["muted"],
+        )
+        self.lbl_date.pack()
+
+        if not self._target_date:
+            self.lbl_cd.config(text="Kein Datum")
+            self.lbl_date.config(text="Datum in den Einstellungen setzen")
         else:
-            self.wind_label.setText("Wind: — | Humidity: —")
+            self._tick()
 
-        self.status.setText("Last update: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        self.update_clock()
+    def _tick(self):
+        try:
+            target = datetime.fromisoformat(self._target_date)
+        except ValueError:
+            self.lbl_cd.config(text="Ungültiges Datum")
+            return
 
-    def on_error(self, message: str) -> None:
-        self.status.setText("Error fetching data: " + message)
+        now  = datetime.now()
+        diff = target - now
 
-    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
-        # minimize to tray instead of closing
-        event.ignore()
-        self.hide()
-        self.tray_icon.show_message("Stardance Dashboard", "App minimized to tray.")
+        if diff.total_seconds() <= 0:
+            self.lbl_cd.config(text="🎉 Erreicht!")
+            self.lbl_date.config(text=target.strftime("%d.%m.%Y"))
+            return
 
+        total_secs = int(diff.total_seconds())
+        days  = total_secs // 86400
+        hours = (total_secs % 86400) // 3600
+        mins  = (total_secs % 3600)  // 60
+        secs  = total_secs % 60
 
-class QSystemTray(QtWidgets.QSystemTrayIcon):
-    def __init__(self, parent: QtWidgets.QWidget | None = None):
-        # create a simple icon pixmap
-        pix = QtGui.QPixmap(64, 64)
-        pix.fill(QtGui.QColor('#1E90FF'))
-        icon = QtGui.QIcon(pix)
-        super().__init__(icon, parent)
-        self.parent = parent
+        if days > 0:
+            self.lbl_cd.config(text=f"{days}T  {hours:02d}:{mins:02d}:{secs:02d}")
+        else:
+            self.lbl_cd.config(text=f"{hours:02d}:{mins:02d}:{secs:02d}")
 
-        menu = QtWidgets.QMenu()
-        restore_action = menu.addAction("Restore")
-        restore_action.triggered.connect(self.restore)
-        exit_action = menu.addAction("Exit")
-        exit_action.triggered.connect(self.exit_app)
-        self.setContextMenu(menu)
-        self.activated.connect(self._activated)
-        self.show()
-
-    def _activated(self, reason):
-        if reason == QtWidgets.QSystemTrayIcon.ActivationReason.Trigger:
-            self.restore()
-
-    def restore(self):
-        if self.parent is not None:
-            self.parent.show()
-            self.parent.raise_()
-
-    def exit_app(self):
-        QtWidgets.QApplication.quit()
-
-    def show_message(self, title: str, text: str) -> None:
-        # some platforms need showMessage to display
-        self.showMessage(title, text, QtGui.QIcon(), 2000)
+        self.lbl_date.config(text=target.strftime("Ziel: %d.%m.%Y  %H:%M"))
+        self.inner.after(1000, self._tick)
 
 
-def main() -> int:
-    app = QtWidgets.QApplication(sys.argv)
-    win = MainWindow()
-    win.show()
-    return app.exec()
+WIDGET_CLASSES = {
+    "dateTime":    DateTimeWidget,
+    "weather":     WeatherWidget,
+    "calendar":    CalendarWidget,
+    "stockCrypto": StockCryptoWidget,
+    "notifications": NotificationsWidget,
+    "countdown":   CountdownWidget,
+}
+
+
+def make_widget(parent, key, colors, big, settings):
+    cls = WIDGET_CLASSES.get(key)
+    if cls:
+        return cls(parent, colors, big=big, settings=settings)
+    tk.Label(parent, text=f"[{key}]", font=("Courier", 12),
+            bg=colors["widget_bg"], fg=colors["muted"]).pack()
+
+
+class Dashboard(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.settings = load_settings()
+        self.colors   = extract_colors(self.settings)
+
+        self._setup_window()
+        self._build_ui()
+
+    def _setup_window(self):
+        self.title("Dashboard")
+        self.configure(bg=self.colors["bg"])
+        self.attributes("-fullscreen", True)
+
+        self.bind("<Escape>", lambda e: self.attributes("-fullscreen", False))
+        self.bind("<F11>",    lambda e: self.attributes("-fullscreen", True))
+        self.bind("<q>",      lambda e: self.destroy())
+        self.bind("<Q>",      lambda e: self.destroy())
+        self.bind("<r>",      lambda e: self._soft_reload())
+        self.bind("<R>",      lambda e: self._soft_reload())
+
+    def _soft_reload(self):
+        """Neustart des Dashboards mit frisch geladenen Einstellungen."""
+        self.destroy()
+        python = sys.executable
+        os.execl(python, python, *sys.argv)
+    def _build_ui(self):
+        c          = self.colors
+        widgets_en = self.settings.get("widgets") or {}
+        starred_id = self.settings.get("starredWidget", "")
+        starred_key = STAR_MAP.get(starred_id, "dateTime")
+
+        enabled = [k for k, v in widgets_en.items() if v]
+        if not enabled:
+            enabled = ["dateTime"]
+        if starred_key not in enabled:
+            starred_key = enabled[0]
+
+        secondary = [k for k in enabled if k != starred_key]
+
+        root_frame = tk.Frame(self, bg=c["bg"])
+        root_frame.pack(fill="both", expand=True, padx=18, pady=14)
+
+        self._build_header(root_frame)
+        content = tk.Frame(root_frame, bg=c["bg"])
+        content.pack(fill="both", expand=True, pady=(8, 0))
+
+        left = tk.Frame(content, bg=c["bg"])
+        left.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        make_widget(left, starred_key, c, big=True, settings=self.settings)
+        if secondary:
+            right = tk.Frame(content, bg=c["bg"], width=340)
+            right.pack(side="right", fill="both")
+            right.pack_propagate(False)
+            for key in secondary[:3]:
+                make_widget(right, key, c, big=False, settings=self.settings)
+
+        self._build_footer(root_frame)
+
+    def _build_header(self, parent):
+        c = self.colors
+        hdr = tk.Frame(parent, bg=c["bg"])
+        hdr.pack(fill="x")
+
+        tk.Label(
+            hdr,
+            text="▣  DASHBOARD",
+            font=("Courier", 20, "bold"),
+            bg=c["bg"], fg=c["accent"],
+        ).pack(side="left")
+
+        self._hdr_clock = tk.Label(
+            hdr, text="",
+            font=("Courier", 14, "bold"),
+            bg=c["bg"], fg=c["accent"],
+        )
+        self._hdr_clock.pack(side="right", padx=(0, 4))
+        self._tick_header()
+        tk.Frame(parent, height=2, bg=c["border"]).pack(fill="x", pady=(4, 0))
+
+    def _tick_header(self):
+        self._hdr_clock.config(text=datetime.now().strftime("%H:%M:%S"))
+        self.after(1000, self._tick_header)
+
+    def _build_footer(self, parent):
+        c = self.colors
+        tk.Frame(parent, height=1, bg=self.colors["border"]).pack(fill="x", pady=(6, 4))
+        footer = tk.Frame(parent, bg=c["bg"])
+        footer.pack(fill="x")
+
+        tk.Label(
+            footer,
+            text="ESC Vollbild verlassen   F11 Vollbild   R Neu laden   Q Beenden",
+            font=("Courier", 9),
+            bg=c["bg"], fg=c["muted"],
+        ).pack(side="left")
+
+        location = self.settings.get("location", "")
+        if location:
+            tk.Label(
+                footer,
+                text=f"📍 {location}",
+                font=("Courier", 9),
+                bg=c["bg"], fg=c["muted"],
+            ).pack(side="right")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if not HAS_REQUESTS:
+        print("[WARNUNG] 'requests' nicht installiert. Live-Daten werden nicht geladen.")
+        print("          Installieren: pip install requests")
+
+    settings = load_settings()
+    if not settings:
+        print("[INFO] No settings.json found or failed to load. Using default settings.")
+        print("       Start server.py and configure it first at")
+        print("       http://localhost:8000, before you start dashboard.py.")
+        print("       The dashboard will run with default settings regardless.")
+
+    app = Dashboard()
+    app.mainloop()
