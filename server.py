@@ -2,8 +2,9 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import json
 import os
+import subprocess
+import sys
 import time
-
 import requests
 from dotenv import load_dotenv
 from google_auth_oauthlib.flow import Flow
@@ -26,24 +27,19 @@ CMC_API_KEY = os.environ.get("CMC_API_KEY")
 
 SETTINGS_FILE = "settings.json"
 
-# Temporary in-memory store mapping OAuth "state" -> PKCE code_verifier.
-# This bridges the gap between /auth/google (which creates the Flow and its
-# verifier) and /auth/google/callback (a separate request/Flow object that
-# needs the same verifier to exchange the code for tokens).
 _pending_oauth_states: dict[str, str] = {}
 
-# In-memory cache of the full CoinMarketCap id/name/symbol list. CMC has no
-# "search as you type" endpoint, so we fetch the full map once, cache it for
-# a while, and filter it locally for each search request.
 _cmc_map_cache: dict = {"data": None, "fetched_at": 0}
 _CMC_MAP_CACHE_SECONDS = 60 * 60  # 1 hour
+
+# Track the running dashboard process to avoid launching it twice
+_dashboard_proc = None
 
 
 def _get_cmc_map():
     now = time.time()
     if _cmc_map_cache["data"] is not None and (now - _cmc_map_cache["fetched_at"]) < _CMC_MAP_CACHE_SECONDS:
         return _cmc_map_cache["data"]
-
     response = requests.get(
         "https://pro-api.coinmarketcap.com/v1/cryptocurrency/map",
         headers={"X-CMC_PRO_API_KEY": CMC_API_KEY},
@@ -94,8 +90,8 @@ def _search_crypto(keywords: str):
                 "name": name,
                 "id": coin.get("id"),
             })
-        if len(matches) >= 8:
-            break
+            if len(matches) >= 8:
+                break
     return matches
 
 
@@ -151,7 +147,6 @@ def _load_google_credentials():
     token_data = settings.get("googleCalendar")
     if not token_data or not token_data.get("refreshToken"):
         return None
-
     credentials = Credentials(
         token=token_data.get("token"),
         refresh_token=token_data.get("refreshToken"),
@@ -160,11 +155,9 @@ def _load_google_credentials():
         client_secret=token_data.get("clientSecret") or GOOGLE_CLIENT_SECRET,
         scopes=token_data.get("scopes") or GOOGLE_SCOPES,
     )
-
     if not credentials.valid:
         credentials.refresh(GoogleAuthRequest())
         _store_google_tokens(credentials)
-
     return credentials
 
 
@@ -197,31 +190,57 @@ def _write_json_response(handler, status_code, payload):
 def _validate_settings(data):
     widgets = data.get("widgets") or {}
     checked_widgets = [name for name, enabled in widgets.items() if enabled]
-
     if not checked_widgets:
         return "Please select at least one widget."
-
     starred_widget = data.get("starredWidget")
     if not starred_widget:
         return "Please star at least one widget."
-
     starred_widget_name = STARRED_WIDGET_TO_KEY.get(starred_widget)
     if starred_widget_name is None or not widgets.get(starred_widget_name, False):
         return "The starred widget must be one of the selected widgets."
-
     use_ip_location = bool(data.get("useIpLocation"))
     location = (data.get("location") or "").strip()
-
     if not use_ip_location and not location:
         return "Please enter a location or enable IP location."
-
     if not use_ip_location and not data.get("coordinates"):
         return "Location coordinates are missing."
-
     if use_ip_location and not data.get("coordinates"):
         return "IP location coordinates are missing."
-
     return None
+
+
+def _launch_dashboard():
+    """Start dashboard.py as an independent subprocess."""
+    global _dashboard_proc
+
+    # Don't launch a second instance if one is already running
+    if _dashboard_proc is not None and _dashboard_proc.poll() is None:
+        return True, "Dashboard is already running."
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    dashboard_path = os.path.join(script_dir, "dashboard.py")
+
+    if not os.path.exists(dashboard_path):
+        return False, f"dashboard.py not found in: {script_dir}"
+
+    try:
+        kwargs = {}
+        if sys.platform == "win32":
+            # Open in a new console window on Windows
+            kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+        else:
+            # Detach from the server process on Linux/macOS (Raspberry Pi)
+            kwargs["start_new_session"] = True
+
+        _dashboard_proc = subprocess.Popen(
+            [sys.executable, dashboard_path],
+            cwd=script_dir,
+            **kwargs,
+        )
+        return True, f"Dashboard started (PID {_dashboard_proc.pid})"
+    except Exception as exc:
+        return False, str(exc)
+
 
 class Handler(SimpleHTTPRequestHandler):
 
@@ -237,6 +256,17 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+
+        # ── NEW: launch dashboard.py ───────────────────────────────────
+        if self.path == "/launch":
+            ok, msg = _launch_dashboard()
+            if ok:
+                _write_json_response(self, 200, {"status": "ok", "message": msg})
+            else:
+                _write_json_response(self, 500, {"status": "error", "error": msg})
+            return
+        # ──────────────────────────────────────────────────────────────
+
         if self.path == "/save":
             try:
                 length = int(self.headers["Content-Length"])
@@ -250,8 +280,6 @@ class Handler(SimpleHTTPRequestHandler):
                 _write_json_response(self, 400, {"status": "error", "error": validation_error})
                 return
 
-            # Preserve the googleCalendar token block; the settings form on the
-            # frontend does not know about it and must not wipe it out on save.
             existing = _load_settings()
             if "googleCalendar" in existing and "googleCalendar" not in data:
                 data["googleCalendar"] = existing["googleCalendar"]
@@ -270,7 +298,6 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        # Blockiere Zugriff auf .env-Datei
         if path == "/.env" or path.endswith(".env"):
             self.send_response(403)
             self.send_cors_headers()
@@ -301,8 +328,6 @@ class Handler(SimpleHTTPRequestHandler):
                 include_granted_scopes="true",
                 prompt="consent",
             )
-            # Remember the PKCE verifier for this login attempt so the
-            # callback request (a separate Flow object) can reuse it.
             _pending_oauth_states[state] = flow.code_verifier
             _write_json_response(self, 200, {"url": auth_url})
 
@@ -311,16 +336,13 @@ class Handler(SimpleHTTPRequestHandler):
             code = params.get("code", [None])[0]
             error = params.get("error", [None])[0]
             state = params.get("state", [None])[0]
-
             if error:
                 self._redirect_to_settings(f"google_error={error}")
                 return
             if not code:
                 self._redirect_to_settings("google_error=missing_code")
                 return
-
             code_verifier = _pending_oauth_states.pop(state, None) if state else None
-
             try:
                 flow = _build_google_flow(code_verifier=code_verifier)
                 flow.fetch_token(code=code)
@@ -328,7 +350,6 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self._redirect_to_settings(f"google_error={e}")
                 return
-
             self._redirect_to_settings("google_connected=1")
 
         elif path == "/calendar/events":
@@ -357,25 +378,20 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/finance/search":
             params = parse_qs(parsed.query)
             query = (params.get("q", [""])[0] or "").strip()
-
             if len(query) < 1:
                 _write_json_response(self, 200, {"results": []})
                 return
-
             results = []
-
             if ALPHA_VANTAGE_API_KEY:
                 try:
                     results.extend(_search_stocks(query))
                 except Exception as e:
                     print("Alpha Vantage search failed:", e)
-
             if CMC_API_KEY:
                 try:
                     results.extend(_search_crypto(query))
                 except Exception as e:
                     print("CoinMarketCap search failed:", e)
-
             _write_json_response(self, 200, {"results": results})
 
         elif path == "/notifications/messages":
@@ -391,7 +407,6 @@ class Handler(SimpleHTTPRequestHandler):
                     maxResults=10,
                 ).execute()
                 message_refs = listing.get("messages", [])
-
                 messages = []
                 for ref in message_refs:
                     full = service.users().messages().get(
@@ -409,7 +424,6 @@ class Handler(SimpleHTTPRequestHandler):
                         "snippet": full.get("snippet", ""),
                         "unread": "UNREAD" in full.get("labelIds", []),
                     })
-
                 _write_json_response(self, 200, {"messages": messages})
             except Exception as e:
                 error_text = str(e)

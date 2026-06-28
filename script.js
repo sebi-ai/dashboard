@@ -851,3 +851,47 @@ if (saveStockCryptoBtn && stockCryptoWindow) {
         updateModalOverlay();
     });
 }
+
+(function () {
+ const startBtn = document.getElementById("start-btn");
+  if (!startBtn) return;
+
+    startBtn.addEventListener("click", async () => {
+    const originalText = startBtn.textContent;
+    startBtn.disabled = true;
+    startBtn.textContent = "Starting…";
+
+    try {
+      const res = await fetch("/launch", { method: "POST" });
+      const data = await res.json();
+
+      if (res.ok && data.status === "ok") {
+        showNotification("Dashboard gestartet ✓", "success");
+        startBtn.textContent = "Dashboard is running";
+        setTimeout(() => {
+          startBtn.disabled = false;
+          startBtn.textContent = originalText;
+        }, 4000);
+      } else {
+        const msg = data.error || "Unbekannter Fehler";
+        showNotification("Fehler: " + msg, "error");
+        startBtn.disabled = false;
+        startBtn.textContent = originalText;
+      }
+    } catch (err) {
+      showNotification("Server nicht erreichbar – läuft server.py?", "error");
+      startBtn.disabled = false;
+      startBtn.textContent = originalText;
+    }
+  });
+
+  function showNotification(message, type = "success") {
+    const el = document.getElementById("site-notification");
+    if (!el) { alert(message); return; }
+    const text = el.querySelector(".site-notification__text");
+    if (text) text.textContent = message;
+    el.classList.remove("success", "error", "visible");
+    el.classList.add(type, "visible");
+    setTimeout(() => el.classList.remove("visible"), 3500);
+  }
+})();
