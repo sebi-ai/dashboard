@@ -546,56 +546,61 @@ body.modal-open::before {
   margin-right: 10px;
 }
 
-.menu-button {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  width: 40px;
-  height: 40px;
-  background: #1b1b8f;
-  border-radius: 8px;
-  cursor: pointer;
-  z-index: 1001;
-
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 5px;
-}
-
-.menu-button span {
-  display: block;
-  width: 20px;
-  height: 2px;
-  background: white;
-  border-radius: 2px;
-}
 
 #head {
   position: fixed;
-  top: 68px;
-  left: 21px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding-top: 50px;
-  padding-bottom: 50px;
-  padding-right: 30px;
-  padding-left: 30px;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0, 20, 131, 0.15);
-  transform: translateX(-20px);
-  opacity: 0;
-  pointer-events: none;
-  transition: all 0.25s ease;
-  border: 2px solid rgb(0, 2, 131);
+  top: 16px;
+  left: 16px;
+  z-index: 1000;
 }
 
-#head.open {
-  transform: translateX(0);
-  opacity: 1;
-  pointer-events: auto;
+#settings-menu {
+  position: relative;
+  display: inline-block;
+}
+
+#settings-trigger {
+  cursor: pointer;
+}
+
+#settings-dropdown {
+  display: none;
+  position: absolute;
+  top: 0;          
+  left: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  background: white;
+  border-radius: 30px;
+  border: 2px solid rgb(0, 2, 131);
+  min-width: 180px;
+  box-shadow: 0 4px 20px rgba(0, 2, 131, 0.15);
+}
+
+#menu-logo {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 8px auto;
+  display: block;
+}
+
+#settings-menu:hover #settings-dropdown {
+  display: flex;
+}
+
+#settings-menu:hover #settings-trigger {
+  display: none;
+}
+
+
+#settings-dropdown .btn {
+  width: 100%;
+  text-align: left;
+}
+
+#settings-dropdown {
+  width: 500px;
+  color: green !important;
 }
