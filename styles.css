@@ -50,20 +50,6 @@
   transition: all 0.05s ease-in-out;
 }
 
-#head {
-  position: relative;
-  height: 80px;
-  display: flex;
-  justify-content: center;  
-  align-items: center;       
-  gap: 40px;
-  border: 2px solid rgb(0, 2, 131);
-  border-radius: 40px;  
-  margin-top: 20px;
-  padding: 20px;
-  box-shadow: 0 10px 30px rgba(0, 2, 131, 0.3);
-}
-
 p, ul, ol, input, label {
   font-size: 20px;
   font-family: "Orbitron", sans-serif;
@@ -558,4 +544,58 @@ body.modal-open::before {
   height: 44px;
   object-fit: contain;
   margin-right: 10px;
+}
+
+.menu-button {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  width: 40px;
+  height: 40px;
+  background: #1b1b8f;
+  border-radius: 8px;
+  cursor: pointer;
+  z-index: 1001;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+}
+
+.menu-button span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: white;
+  border-radius: 2px;
+}
+
+#head {
+  position: fixed;
+  top: 68px;
+  left: 21px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding-top: 50px;
+  padding-bottom: 50px;
+  padding-right: 30px;
+  padding-left: 30px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 20, 131, 0.15);
+  transform: translateX(-20px);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s ease;
+  border: 2px solid rgb(0, 2, 131);
+}
+
+#head.open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
 }

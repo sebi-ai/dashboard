@@ -894,4 +894,10 @@ if (saveStockCryptoBtn && stockCryptoWindow) {
     el.classList.add(type, "visible");
     setTimeout(() => el.classList.remove("visible"), 3500);
   }
-})();
+})
+
+function toggleMenu() {
+  const menu = document.getElementById("head");
+  console.log(menu);
+  menu.classList.toggle("open");
+}

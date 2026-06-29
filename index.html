@@ -15,13 +15,22 @@
     <div id="site-notification" class="site-notification">
         <span class="site-notification__text"></span>
     </div>
-    <div id="head">
-        <img src="favicon.png" id="logo" alt="Logo">
-        <button class="btn" id="home-btn">Home</button>
-        <button id="redirect-start-btn" class="btn">Open Dashboard</button>
-        <button class="btn" id="settings-btn">Settings</button>
-        <button class="btn" id="about-btn">About me</button>
+    <div class="menu-button" onclick="toggleMenu()">
+        <span></span>
+        <span></span>
+        <span></span>
     </div>
+    <nav id="head">
+        <div class="logo-wrap">
+            <img src="favicon.png" id="logo" alt="Logo">
+        </div>
+        <div class="menu-items">
+            <button class="btn" id="home-btn">Home</button>
+            <button id="redirect-start-btn" class="btn">Open Dashboard</button>
+            <button class="btn" id="settings-btn">Settings</button>
+            <button class="btn" id="about-btn">About me</button>
+        </div>
+    </nav>
     <section id="home">
         <h1>Welcome to my Dashboard</h1>
             <p>It's the first (hopefully) useable website I made, so don't expect too much.</p>
