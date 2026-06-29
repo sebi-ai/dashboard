@@ -577,6 +577,7 @@ body.modal-open::before {
   border: 2px solid rgb(0, 2, 131);
   min-width: 180px;
   box-shadow: 0 4px 20px rgba(0, 2, 131, 0.15);
+  padding: 30px;
 }
 
 #menu-logo {
@@ -600,7 +601,26 @@ body.modal-open::before {
   text-align: left;
 }
 
-#settings-dropdown {
-  width: 500px;
-  color: green !important;
+#settings-trigger {
+  cursor: pointer;
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+  padding: 0;
+  background-color: rgb(0, 2, 132);
+  border-color: rgba(0, 110, 45, 0.72);
+  box-shadow: 0 10px 30px rgba(0, 2, 131, 0.15);
+}
+
+#settings-trigger:hover {
+  background-color: rgb(0, 2, 98);
+}
+
+#settings-trigger:active {
+  background-color: rgb(0, 2, 98);
+}
+
+.menu-btn {
+  margin-top: 8px;
+  padding-left: 5px;
 }
