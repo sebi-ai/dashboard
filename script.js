@@ -13,9 +13,6 @@ const disconnectMailBtn = document.getElementById('disconnect-google-mail-btn');
 const notificationsStatus = document.getElementById('notifications-connection-status');
 const messagesList = document.getElementById('notifications-messages-list');
 
-// Holds the currently chosen stock/crypto suggestion until "Save" is pressed,
-// or the value restored from settings.json on load.
-// Shape: { type: "stock" | "crypto", symbol: "AAPL", name: "Apple Inc." }
 let stockCryptoSelection = null;
 
 if (connectBtn) {
@@ -94,7 +91,6 @@ async function refreshCalendarStatus() {
     }
 
     try {
-        // Token-Validierung direkt an Google senden
         const response = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${accessToken}`);
         if (response.ok) {
             calendarStatus.textContent = "Connected to Google Calendar.";
@@ -122,7 +118,6 @@ async function loadCalendarEvents() {
     }
 
     try {
-        // API-Anfrage direkt an Google senden
         const response = await fetch(
             `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=10&singleEvents=true&orderBy=startTime`,
             {
@@ -154,10 +149,6 @@ async function loadCalendarEvents() {
     }
 }
 
-// --- Notifications widget (Gmail) ---
-// Uses the same Google login as the Calendar widget (/auth/google), just
-// with the gmail.readonly scope added on the server side.
-
 async function refreshNotificationsStatus() {
     if (!notificationsStatus) return;
     const accessToken = localStorage.getItem('google_access_token');
@@ -170,7 +161,6 @@ async function refreshNotificationsStatus() {
     }
 
     try {
-        // Token-Validierung direkt an Google senden
         const response = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${accessToken}`);
         if (response.ok) {
             notificationsStatus.textContent = "Connected to Google Mail.";
@@ -198,7 +188,6 @@ async function loadMessages() {
     }
 
     try {
-        // API-Anfrage direkt an Google senden
         const response = await fetch(
             `https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=5`,
             {
@@ -894,7 +883,7 @@ if (saveStockCryptoBtn && stockCryptoWindow) {
     el.classList.add(type, "visible");
     setTimeout(() => el.classList.remove("visible"), 3500);
   }
-})
+}) 
 
 function toggleMenu() {
   const menu = document.getElementById("head");
