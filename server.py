@@ -450,5 +450,5 @@ def _now_iso():
 
 
 httpd = HTTPServer(("localhost", 8000), Handler)
-print("Server läuft auf http://localhost:8000")
+print("Server runs on http://localhost:8000")
 httpd.serve_forever()
