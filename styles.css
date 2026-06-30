@@ -576,7 +576,6 @@ body.modal-open::before {
   z-index: 2000;
 }
 
-
 #settings-menu:hover #settings-dropdown {
   display: flex;
 }
