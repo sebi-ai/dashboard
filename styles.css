@@ -491,9 +491,9 @@ a:visited {
   padding: 20px;
   box-shadow: 0 10px 30px rgba(0, 2, 131, 0.3);
   margin-right: 20px;
-  top: 0 !important;
-  left: 0 !important;
-  transform: translateY(5%) !important;
+  top: 0% !important;
+  left: 0% !important;
+  transform: translate(0%, 0%) !important;
   position: sticky;
   margin-top: auto;
   gap: 200px;
