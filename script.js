@@ -525,6 +525,8 @@ if (saveSettingsBtn) {
 
         const checked = document.querySelectorAll('.limited-checkbox:checked');
         const starred = document.querySelector('input[name="widget-star"]:checked');
+        const presetThemeChecked = document.getElementById("theme-mode-preset").checked;
+        const customThemeChecked = document.getElementById("theme-mode-custom").checked;
         const location = document.getElementById("location").value;
         const useIp = document.getElementById("use-ip-location").checked;
 
@@ -540,6 +542,11 @@ if (saveSettingsBtn) {
 
         if (!useIp && location.trim() === "") {
             showNotification("Please enter a location or enable IP location.", "error");
+            return;
+        }
+
+        if (!presetThemeChecked && !customThemeChecked) {
+            showNotification("Please select a theme.", "error");
             return;
         }
 
@@ -571,15 +578,15 @@ if (saveSettingsBtn) {
             stockCrypto: document.getElementById("stock-crypto-widget").checked,
         },
     starredWidget: document.querySelector('input[name="widget-star"]:checked')?.id ?? null,
-    theme: document.getElementById("theme-mode-preset").checked
+    theme: presetThemeChecked
         ? document.getElementById("theme-select").value
         : null,
-    customColor: document.getElementById("theme-mode-custom").checked
+    customColor: customThemeChecked
         ? document.getElementById("custom-color").value
         : null,
-    themeMode: document.getElementById("theme-mode-custom").checked
+    themeMode: customThemeChecked
         ? "custom"
-        : (document.getElementById("theme-mode-preset").checked ? "preset" : null),
+        : (presetThemeChecked ? "preset" : null),
     countdownDate: document.getElementById("countdown-date").value,
     stockCryptoSelection: stockCryptoSelection
         };

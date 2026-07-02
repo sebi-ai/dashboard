@@ -198,6 +198,15 @@ def _validate_settings(data):
     starred_widget_name = STARRED_WIDGET_TO_KEY.get(starred_widget)
     if starred_widget_name is None or not widgets.get(starred_widget_name, False):
         return "The starred widget must be one of the selected widgets."
+
+    theme_mode = data.get("themeMode")
+    if theme_mode not in ("preset", "custom"):
+        return "Please select a theme."
+    if theme_mode == "preset" and not (data.get("theme") or "").strip():
+        return "Please select a preset theme."
+    if theme_mode == "custom" and not (data.get("customColor") or "").strip():
+        return "Please choose a custom color."
+
     use_ip_location = bool(data.get("useIpLocation"))
     location = (data.get("location") or "").strip()
     if not use_ip_location and not location:
