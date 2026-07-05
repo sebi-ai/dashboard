@@ -14,9 +14,31 @@ from googleapiclient.discovery import build
 
 load_dotenv()
 
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+GOOGLE_CREDENTIALS_FILE = os.environ.get(
+    "GOOGLE_CREDENTIALS_FILE",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "client_secret.json"),
+)
+
+
+def _load_google_client_config():
+    """Load the Google OAuth client config from the JSON file downloaded
+    from Google Cloud Console (format: {"web": {...}})."""
+    if not os.path.exists(GOOGLE_CREDENTIALS_FILE):
+        return None
+    with open(GOOGLE_CREDENTIALS_FILE, "r") as f:
+        data = json.load(f)
+    return data.get("web") or data.get("installed")
+
+
+_google_client_config = _load_google_client_config()
+
+GOOGLE_CLIENT_ID = _google_client_config.get("client_id") if _google_client_config else None
+GOOGLE_CLIENT_SECRET = _google_client_config.get("client_secret") if _google_client_config else None
+GOOGLE_REDIRECT_URI = (
+    (_google_client_config.get("redirect_uris") or [None])[0]
+    if _google_client_config
+    else None
+) or os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -96,15 +118,9 @@ def _search_crypto(keywords: str):
 
 
 def _build_google_flow(code_verifier: str | None = None):
-    client_config = {
-        "web": {
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [GOOGLE_REDIRECT_URI],
-        }
-    }
+    if not _google_client_config:
+        raise RuntimeError(f"Google credentials file '{GOOGLE_CREDENTIALS_FILE}' not found or invalid.")
+    client_config = {"web": _google_client_config}
     flow = Flow.from_client_config(
         client_config,
         scopes=GOOGLE_SCOPES,
