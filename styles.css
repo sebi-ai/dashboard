@@ -142,8 +142,8 @@ input[type="text"] {
 }
 
 input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
+  width: 20px !important;
+  height: 20px !important;
   cursor: pointer;
   accent-color: rgb(0, 2, 131); 
 }

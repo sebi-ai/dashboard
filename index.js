@@ -19,7 +19,6 @@ const oauth2Client = new google.auth.OAuth2(
   RedirectURI
 );
 
-// 1. OAuth starten
 app.get('/auth/google', (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
@@ -28,23 +27,19 @@ app.get('/auth/google', (req, res) => {
   res.json({ url: authUrl });
 });
 
-// 2. Callback nach Google
 app.get('/auth/google/callback', async (req, res) => {
   const { code } = req.query;
   const { tokens } = await oauth2Client.getToken(code);
   oauth2Client.setCredentials(tokens);
 
-  // Tipp: tokens.access_token und tokens.refresh_token speichern in DB
-  // hier nur kurz zurückgeben:
   res.json({
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token,
   });
 });
 
-// 3. Kalender-Termine laden
 app.get('/calendar/events', async (req, res) => {
-  const accessToken = req.query.accessToken; // oder aus DB göre User
+  const accessToken = req.query.accessToken; 
   if (!accessToken) {
     return res.status(400).json({ error: 'accessToken required' });
   }

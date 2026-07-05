@@ -1,7 +1,6 @@
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
 
-// Google OAuth Client-ID (muss in .env oder direkt hier definiert werden)
-const CLIENT_ID = "927696919752-l35s9nedd6srh8n8dn8nqc3oi1mv3njd.apps.googleusercontent.com"; // Ersetzt mit echtem Client-ID
+const CLIENT_ID = "927696919752-l35s9nedd6srh8n8dn8nqc3oi1mv3njd.apps.googleusercontent.com"; 
 
 const connectBtn = document.getElementById('connect-google-calendar-btn');
 const disconnectBtn = document.getElementById('disconnect-google-calendar-btn');
@@ -21,7 +20,7 @@ if (connectBtn) {
             client_id: CLIENT_ID,
             scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
             redirect_uri: `${window.location.origin}/settings.html`,
-            code_verifier: '', // Wird automatisch generiert
+            code_verifier: '', 
             callback: (tokenResponse) => {
                 if (tokenResponse.access_token) {
                     localStorage.setItem('google_access_token', tokenResponse.access_token);
@@ -44,7 +43,7 @@ if (connectMailBtn) {
             client_id: CLIENT_ID,
             scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
             redirect_uri: `${window.location.origin}/settings.html`,
-            code_verifier: '', // Wird automatisch generiert
+            code_verifier: '', 
             callback: (tokenResponse) => {
                 if (tokenResponse.access_token) {
                     localStorage.setItem('google_access_token', tokenResponse.access_token);
@@ -206,7 +205,6 @@ async function loadMessages() {
             messagesList.innerHTML = "<li>No messages found.</li>";
             return;
         }
-        // Nachrichten-Details abrufen
         for (const message of data.messages) {
             const msgResponse = await fetch(
                 `https://www.googleapis.com/gmail/v1/users/me/messages/${message.id}`,
@@ -232,7 +230,6 @@ async function loadMessages() {
     }
 }
 
-// OAuth-Redirect-Parameter verarbeiten
 function handleGoogleRedirectParams() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
@@ -245,12 +242,11 @@ function handleGoogleRedirectParams() {
     }
 
     if (code && scope) {
-        // Token-Austausch direkt im Browser (ohne Backend)
         const oauth2Client = google.accounts.oauth2.initCodeClient({
             client_id: CLIENT_ID,
             scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
             redirect_uri: `${window.location.origin}/settings.html`,
-            code_verifier: '', // Wird automatisch generiert
+            code_verifier: '', 
             callback: (tokenResponse) => {
                 if (tokenResponse.access_token) {
                     localStorage.setItem('google_access_token', tokenResponse.access_token);
@@ -305,6 +301,10 @@ async function loadSettings() {
             document.getElementById("theme-mode-preset").checked = true;
             document.getElementById("theme-mode-custom").checked = false;
         }
+        document.getElementById("theme-select").disabled =
+            document.getElementById("theme-mode-custom").checked;
+        document.getElementById("custom-color").disabled =
+            document.getElementById("theme-mode-preset").checked;
 
         if (s.stockCryptoSelection) {
             stockCryptoSelection = s.stockCryptoSelection;
@@ -406,18 +406,27 @@ if (checkbox && textfeld) {
 
 const themeModePreset = document.getElementById("theme-mode-preset");
 const themeModeCustom = document.getElementById("theme-mode-custom");
+const themeSelect = document.getElementById("theme-select");
+const customColorInput = document.getElementById("custom-color");
 
-if (themeModePreset && themeModeCustom) {
+if (themeModePreset && themeModeCustom && themeSelect && customColorInput) {
+    themeSelect.disabled = themeModeCustom.checked; 
+    customColorInput.disabled = themeModePreset.checked; 
+
     themeModePreset.addEventListener("change", () => {
         if (themeModePreset.checked) {
             themeModeCustom.checked = false;
         }
+        themeSelect.disabled = themeModeCustom.checked;
+        customColorInput.disabled = themeModePreset.checked;
     });
 
     themeModeCustom.addEventListener("change", () => {
         if (themeModeCustom.checked) {
             themeModePreset.checked = false;
         }
+        themeSelect.disabled = themeModeCustom.checked;
+        customColorInput.disabled = themeModePreset.checked;
     });
 }
 
@@ -478,7 +487,6 @@ function showNotification(message, type = "info") {
     }, 3000);
 }
 
-// Location Autocomplete
 const locationInput = document.getElementById("location");
 const suggestionsList = document.getElementById("location-suggestions");
 let debounceTimer;
@@ -612,7 +620,6 @@ if (saveSettingsBtn) {
     });
 }
 
-// Intelligente Funktion: prüft ob noch ein Modal offen ist
 function updateModalOverlay() {
     const modals = [
         document.getElementById("countdown-window"),
@@ -630,7 +637,6 @@ function updateModalOverlay() {
     }
 }
 
-// Alle EventListener anpassen um updateModalOverlay zu nutzen
 const countdownWidget = document.getElementById("countdown-widget");
 const countdownWindow = document.getElementById("countdown-window");
 const closeCountdown = document.getElementById("save-countdown");
@@ -644,7 +650,6 @@ function openCountdownWindow() {
     if (countdownDate) countdownDate.focus();
 }
 
-// Checkbox: öffnet das Popup beim Aktivieren, leert das Datum beim Deaktivieren.
 if (countdownWidget) {
     countdownWidget.addEventListener("change", function () {
         if (countdownWidget.checked) {
@@ -655,7 +660,6 @@ if (countdownWidget) {
     });
 }
 
-// "Configure"-Button öffnet das Popup ebenfalls.
 if (openCountdownBtn) {
     openCountdownBtn.addEventListener("click", openCountdownWindow);
 }
@@ -684,7 +688,6 @@ function openCalendarWindow() {
     }
 }
 
-// Checkbox öffnet das Popup beim Aktivieren.
 if (calendarWidgetCheckbox) {
     calendarWidgetCheckbox.addEventListener("change", function () {
         if (calendarWidgetCheckbox.checked) {
@@ -693,7 +696,6 @@ if (calendarWidgetCheckbox) {
     });
 }
 
-// "Configure"-Button öffnet das Popup ebenfalls.
 if (openCalendarBtn) {
     openCalendarBtn.addEventListener("click", openCalendarWindow);
 }
@@ -721,7 +723,6 @@ function openNotificationsWindow() {
     }
 }
 
-// Checkbox öffnet das Popup beim Aktivieren.
 if (notificationsWidgetCheckbox) {
     notificationsWidgetCheckbox.addEventListener("change", function () {
         if (notificationsWidgetCheckbox.checked) {
@@ -730,7 +731,6 @@ if (notificationsWidgetCheckbox) {
     });
 }
 
-// "Configure"-Button öffnet das Popup ebenfalls.
 if (openNotificationsBtn) {
     openNotificationsBtn.addEventListener("click", openNotificationsWindow);
 }
@@ -742,7 +742,6 @@ if (closeNotificationsWindow && notificationsWindow) {
     });
 }
 
-// --- Stock / Crypto widget ---
 
 const stockCryptoWidgetCheckbox = document.getElementById("stock-crypto-widget");
 const stockCryptoWindow = document.getElementById("stock-crypto-window");
@@ -761,7 +760,6 @@ function openStockCryptoWindow() {
     if (stockCryptoSearchInput) stockCryptoSearchInput.focus();
 }
 
-// Checkbox öffnet das Popup beim Aktivieren.
 if (stockCryptoWidgetCheckbox) {
     stockCryptoWidgetCheckbox.addEventListener("change", function () {
         if (stockCryptoWidgetCheckbox.checked) {
@@ -770,7 +768,6 @@ if (stockCryptoWidgetCheckbox) {
     });
 }
 
-// "Configure"-Button öffnet das Popup ebenfalls.
 if (openStockCryptoBtn) {
     openStockCryptoBtn.addEventListener("click", openStockCryptoWindow);
 }
