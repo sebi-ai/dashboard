@@ -1,7 +1,17 @@
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
 
+// Client-ID should ideally come from backend, but for frontend-only OAuth this is needed
+// This is the public client_id, not a secret (the secret is only used server-side)
 const CLIENT_ID = "165264914036-un16aets246l3a45v0lu9ro70jr3je6v.apps.googleusercontent.com";
 const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly';
+
+// Security: Prevent direct file access to sensitive files
+// This is a client-side check, server-side protection is in index.js
+const FORBIDDEN_FILES = ['.env', 'client_secret', '.json', 'settings.json'];
+if (FORBIDDEN_FILES.some(file => window.location.pathname.includes(file))) {
+  console.warn('Access to sensitive file blocked');
+  window.location.href = '/index.html';
+}
 
 function _checkGoogleEnvironment() {
     if (window.location.protocol === 'file:') {

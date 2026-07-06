@@ -2,12 +2,44 @@ import express from 'express';
 import { google } from 'googleapis';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Sicherheitsmittel: Statische Dateien nur aus bestimmten Ordnern erlauben
+// NEVER serve .env, .json, or any secret files
+const allowedStaticExtensions = ['.html', '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf'];
+
+app.use((req, res, next) => {
+  const ext = path.extname(req.url);
+  if (req.url.startsWith('/auth/') || req.url.startsWith('/calendar/') || req.url.startsWith('/finance/') || req.url.startsWith('/save') || req.url.startsWith('/load') || req.url.startsWith('/launch')) {
+    return next();
+  }
+  if (allowedStaticExtensions.includes(ext)) {
+    return next();
+  }
+  res.status(404).send('Not Found');
+});
+
+// Statische Dateien nur aus dem aktuellen Verzeichnis, aber mit Security-Check
+app.use(express.static(__dirname, {
+  dotfiles: 'deny',
+  index: ['index.html', 'dashboard.html'],
+  setHeaders: (res, path) => {
+    const ext = path.extname(path);
+    if (ext === '.html' || ext === '.css' || ext === '.js') {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }
+}));
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
