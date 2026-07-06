@@ -44,3 +44,5 @@ package.json
 package-lock.json
 *.json
 changes.txt
+.claude
+.gitignore

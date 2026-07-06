@@ -1,6 +1,43 @@
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
 
-const CLIENT_ID = "927696919752-l35s9nedd6srh8n8dn8nqc3oi1mv3njd.apps.googleusercontent.com"; 
+const CLIENT_ID = "165264914036-un16aets246l3a45v0lu9ro70jr3je6v.apps.googleusercontent.com";
+const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly';
+
+function _checkGoogleEnvironment() {
+    if (window.location.protocol === 'file:') {
+        showNotification('ERROR: Open via http://localhost:8000, not by double-clicking the file!', 'error');
+        console.error("GOOGLE AUTH ERROR: Page opened via file:// protocol. You MUST access it via http://localhost:8000");
+        return false;
+    }
+    console.log("Google Auth Environment:", {
+        origin: window.location.origin,
+        protocol: window.location.protocol,
+        href: window.location.href,
+        clientId: CLIENT_ID
+    });
+    return true;
+}
+
+function _onGoogleTokenReceived(tokenResponse) {
+    if (tokenResponse.error) {
+        console.error("Google OAuth error:", tokenResponse.error, tokenResponse.error_description);
+        let msg = `Google error: ${tokenResponse.error}`;
+        if (tokenResponse.error === 'unauthorized_client' || tokenResponse.error === 'access_denied') {
+            msg = 'Google: unauthorized. Check: (1) Are you a TEST USER in Google Cloud? (2) Is the JS origin added exactly? (3) Are Gmail/Calendar APIs activated? (4) Is App in Testing & your email added?';
+        }
+        showNotification(msg, 'error');
+        return;
+    }
+    if (tokenResponse.access_token) {
+        localStorage.setItem('google_access_token', tokenResponse.access_token);
+        localStorage.setItem('google_refresh_token', tokenResponse.refresh_token || '');
+        showNotification('Google account connected!');
+        refreshCalendarStatus();
+        refreshNotificationsStatus();
+    } else {
+        showNotification('Failed to connect Google account.');
+    }
+}
 
 const connectBtn = document.getElementById('connect-google-calendar-btn');
 const disconnectBtn = document.getElementById('disconnect-google-calendar-btn');
@@ -16,47 +53,29 @@ let stockCryptoSelection = null;
 
 if (connectBtn) {
     connectBtn.addEventListener('click', () => {
-        const oauth2Client = google.accounts.oauth2.initCodeClient({
+        if (!_checkGoogleEnvironment()) return;
+        const client = google.accounts.oauth2.initTokenClient({
             client_id: CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
-            redirect_uri: `${window.location.origin}/settings.html`,
-            code_verifier: '', 
-            callback: (tokenResponse) => {
-                if (tokenResponse.access_token) {
-                    localStorage.setItem('google_access_token', tokenResponse.access_token);
-                    localStorage.setItem('google_refresh_token', tokenResponse.refresh_token || '');
-                    showNotification('Google account connected!');
-                    refreshCalendarStatus();
-                    refreshNotificationsStatus();
-                } else {
-                    showNotification('Failed to connect Google account.');
-                }
-            },
+            scope: GOOGLE_SCOPES,
+            ux_mode: 'popup',
+            error_callback: _onGoogleTokenReceived,
+            callback: _onGoogleTokenReceived,
         });
-        oauth2Client.requestCode();
+        client.requestAccessToken();
     });
 }
 
 if (connectMailBtn) {
     connectMailBtn.addEventListener('click', () => {
-        const oauth2Client = google.accounts.oauth2.initCodeClient({
+        if (!_checkGoogleEnvironment()) return;
+        const client = google.accounts.oauth2.initTokenClient({
             client_id: CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
-            redirect_uri: `${window.location.origin}/settings.html`,
-            code_verifier: '', 
-            callback: (tokenResponse) => {
-                if (tokenResponse.access_token) {
-                    localStorage.setItem('google_access_token', tokenResponse.access_token);
-                    localStorage.setItem('google_refresh_token', tokenResponse.refresh_token || '');
-                    showNotification('Google account connected!');
-                    refreshCalendarStatus();
-                    refreshNotificationsStatus();
-                } else {
-                    showNotification('Failed to connect Google account.');
-                }
-            },
+            scope: GOOGLE_SCOPES,
+            ux_mode: 'popup',
+            error_callback: _onGoogleTokenReceived,
+            callback: _onGoogleTokenReceived,
         });
-        oauth2Client.requestCode();
+        client.requestAccessToken();
     });
 }
 
@@ -231,35 +250,11 @@ async function loadMessages() {
 }
 
 function handleGoogleRedirectParams() {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const scope = params.get('scope');
-    const error = params.get('error');
-
-    if (error) {
-        showNotification(`Google OAuth error: ${error}`);
-        return;
-    }
-
-    if (code && scope) {
-        const oauth2Client = google.accounts.oauth2.initCodeClient({
-            client_id: CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly',
-            redirect_uri: `${window.location.origin}/settings.html`,
-            code_verifier: '', 
-            callback: (tokenResponse) => {
-                if (tokenResponse.access_token) {
-                    localStorage.setItem('google_access_token', tokenResponse.access_token);
-                    localStorage.setItem('google_refresh_token', tokenResponse.refresh_token || '');
-                    showNotification('Google account connected!');
-                    refreshCalendarStatus();
-                    refreshNotificationsStatus();
-                } else {
-                    showNotification('Failed to connect Google account.');
-                }
-            },
-        });
-        oauth2Client.requestCode();
+    // initTokenClient uses a popup (no redirect), so no URL params from Google are expected.
+    // Clean up any stale query parameters from a previous redirect flow attempt.
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('code') || url.searchParams.has('error')) {
+        window.history.replaceState({}, '', url.pathname + url.hash);
     }
 }
 
