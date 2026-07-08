@@ -4,7 +4,7 @@ Liest settings.json und zeigt die aktivierten Widgets mit den gespeicherten
 Theme-Farben an. Starte zuerst server.py, damit Kalender- und
 Gmail-Widgets funktionieren.
 
-Starten:
+Start:
     python3 dashboard.py
 
 Abhängigkeiten (alle schon in requirements.txt):
@@ -33,6 +33,9 @@ try:
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
+
+
+FONT_FAMILY = "Orbitron"
 
 
 WEATHER_CODES = {
@@ -136,6 +139,17 @@ THEMES = {
     },
 }
 
+WEBSITE_THEME = {
+    "bg": "#f4f7ff",
+    "widget_bg": "#ffffff",
+    "accent": "#0002c0",
+    "text": "#071a4a",
+    "border": "#0002c0",
+    "muted": "#5d6c86",
+    "positive": "#0a8f5b",
+    "negative": "#d83a52",
+}
+
 STAR_MAP = {
     "weather-widget-star":      "weather",
     "notifications-widget-star": "notifications",
@@ -170,7 +184,17 @@ def extract_colors(settings: dict) -> dict:
     Fällt auf das Default-Theme zurück, wenn keine Farben gesetzt sind.
     """
     theme_name = settings.get("theme", "default")
-    base = THEMES.get(theme_name, THEMES["default"]).copy()
+    theme_mode = settings.get("themeMode")
+
+    if theme_mode == "custom" or not theme_name:
+        base = WEBSITE_THEME.copy()
+    else:
+        base = THEMES.get(theme_name, THEMES["default"]).copy()
+
+    custom_color = settings.get("customColor")
+    if custom_color and isinstance(custom_color, str) and custom_color.startswith("#"):
+        base["accent"] = custom_color
+        base["border"] = custom_color
 
     overrides = {
         "accent": (
@@ -238,7 +262,7 @@ class BaseWidget:
         tk.Label(
             h,
             text=f"{icon}  {title}",
-            font=("Courier", 10, "bold"),
+            font=(FONT_FAMILY, 10, "bold"),
             bg=self.colors["widget_bg"],
             fg=self.colors["accent"],
         ).pack(side="left")
@@ -249,7 +273,7 @@ class BaseWidget:
         lbl = tk.Label(
             parent,
             text=text,
-            font=("Courier", font_size, weight),
+            font=(FONT_FAMILY, font_size, weight),
             bg=self.colors["widget_bg"],
             fg=self.colors[color_key],
             anchor=anchor,
@@ -261,7 +285,7 @@ class BaseWidget:
         lbl = tk.Label(
             parent,
             text=text,
-            font=("Courier", font_size),
+            font=(FONT_FAMILY, font_size),
             bg=self.colors["widget_bg"],
             fg=self.colors["muted"],
             anchor=anchor,
@@ -304,14 +328,14 @@ class DateTimeWidget(BaseWidget):
 
         self.lbl_time = tk.Label(
             self.inner, text="--:--:--",
-            font=("Courier", time_fs, "bold"),
+            font=(FONT_FAMILY, time_fs, "bold"),
             bg=self.colors["widget_bg"], fg=self.colors["text"],
         )
         self.lbl_time.pack(pady=(6, 2))
 
         self.lbl_date = tk.Label(
             self.inner, text="",
-            font=("Courier", date_fs),
+            font=(FONT_FAMILY, date_fs),
             bg=self.colors["widget_bg"], fg=self.colors["accent"],
         )
         self.lbl_date.pack()
@@ -319,7 +343,7 @@ class DateTimeWidget(BaseWidget):
         if self.big:
             self.lbl_day = tk.Label(
                 self.inner, text="",
-                font=("Courier", 13),
+                font=(FONT_FAMILY, 13),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
             )
             self.lbl_day.pack(pady=(4, 0))
@@ -344,14 +368,14 @@ class WeatherWidget(BaseWidget):
         temp_fs = 52 if self.big else 30
         self.lbl_temp = tk.Label(
             self.inner, text="--°C",
-            font=("Courier", temp_fs, "bold"),
+            font=(FONT_FAMILY, temp_fs, "bold"),
             bg=self.colors["widget_bg"], fg=self.colors["text"],
         )
         self.lbl_temp.pack(pady=(6, 0))
 
         self.lbl_desc = tk.Label(
             self.inner, text="Lade Wetterdaten …",
-            font=("Courier", 13 if self.big else 10),
+            font=(FONT_FAMILY, 13 if self.big else 10),
             bg=self.colors["widget_bg"], fg=self.colors["accent"],
         )
         self.lbl_desc.pack(pady=(2, 4))
@@ -359,14 +383,14 @@ class WeatherWidget(BaseWidget):
         if self.big:
             self.lbl_location = tk.Label(
                 self.inner, text="",
-                font=("Courier", 11),
+                font=(FONT_FAMILY, 11),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
             )
             self.lbl_location.pack()
 
             self.lbl_details = tk.Label(
                 self.inner, text="",
-                font=("Courier", 11),
+                font=(FONT_FAMILY, 11),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
             )
             self.lbl_details.pack(pady=(4, 0))
@@ -468,10 +492,10 @@ class CalendarWidget(BaseWidget):
 
             row = tk.Frame(self.list_frame, bg=self.colors["widget_bg"])
             row.pack(fill="x", pady=2)
-            tk.Label(row, text=f"▸ {start_fmt}", font=("Courier", 10),
+            tk.Label(row, text=f"▸ {start_fmt}", font=(FONT_FAMILY, 10),
                     bg=self.colors["widget_bg"], fg=self.colors["accent"],
                     width=14, anchor="w").pack(side="left")
-            tk.Label(row, text=summary, font=("Courier", 10),
+            tk.Label(row, text=summary, font=(FONT_FAMILY, 10),
                     bg=self.colors["widget_bg"], fg=self.colors["text"],
                     anchor="w").pack(side="left")
 
@@ -481,7 +505,7 @@ class CalendarWidget(BaseWidget):
 
     def _set_status(self, msg: str):
         self._clear()
-        tk.Label(self.list_frame, text=msg, font=("Courier", 10),
+        tk.Label(self.list_frame, text=msg, font=(FONT_FAMILY, 10),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
                 justify="left", anchor="w").pack(fill="x")
 
@@ -502,7 +526,7 @@ class StockCryptoWidget(BaseWidget):
         self.lbl_name = tk.Label(
             self.inner,
             text=f"{self._sym}  —  {self._name}",
-            font=("Courier", 12 if self.big else 10, "bold"),
+            font=(FONT_FAMILY, 12 if self.big else 10, "bold"),
             bg=self.colors["widget_bg"], fg=self.colors["accent"],
         )
         self.lbl_name.pack(pady=(2, 0))
@@ -510,14 +534,14 @@ class StockCryptoWidget(BaseWidget):
         price_fs = 42 if self.big else 24
         self.lbl_price = tk.Label(
             self.inner, text="-- USD",
-            font=("Courier", price_fs, "bold"),
+            font=(FONT_FAMILY, price_fs, "bold"),
             bg=self.colors["widget_bg"], fg=self.colors["text"],
         )
         self.lbl_price.pack(pady=(8, 2))
 
         self.lbl_change = tk.Label(
             self.inner, text="",
-            font=("Courier", 12 if self.big else 10),
+            font=(FONT_FAMILY, 12 if self.big else 10),
             bg=self.colors["widget_bg"], fg=self.colors["muted"],
         )
         self.lbl_change.pack()
@@ -525,7 +549,7 @@ class StockCryptoWidget(BaseWidget):
         if self.big:
             self.lbl_meta = tk.Label(
                 self.inner, text="",
-                font=("Courier", 10),
+                font=(FONT_FAMILY, 10),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
             )
             self.lbl_meta.pack(pady=(4, 0))
@@ -652,7 +676,7 @@ class NotificationsWidget(BaseWidget):
 
             dot_color = self.colors["accent"] if is_unread else self.colors["muted"]
             tk.Label(row, text="●" if is_unread else "○",
-                    font=("Courier", 10), bg=self.colors["widget_bg"],
+                    font=(FONT_FAMILY, 10), bg=self.colors["widget_bg"],
                     fg=dot_color, width=2).pack(side="left")
 
             info = tk.Frame(row, bg=self.colors["widget_bg"])
@@ -661,11 +685,11 @@ class NotificationsWidget(BaseWidget):
             from_str = (msg.get("from") or "")[:28]
             subj_str = (msg.get("subject") or "(kein Betreff)")[:38]
 
-            tk.Label(info, text=from_str, font=("Courier", 9, "bold"),
+            tk.Label(info, text=from_str, font=(FONT_FAMILY, 9, "bold"),
                     bg=self.colors["widget_bg"],
                     fg=self.colors["text"] if is_unread else self.colors["muted"],
                     anchor="w").pack(fill="x")
-            tk.Label(info, text=subj_str, font=("Courier", 9),
+            tk.Label(info, text=subj_str, font=(FONT_FAMILY, 9),
                     bg=self.colors["widget_bg"], fg=self.colors["muted"],
                     anchor="w").pack(fill="x")
 
@@ -675,7 +699,7 @@ class NotificationsWidget(BaseWidget):
 
     def _set_status(self, msg: str):
         self._clear()
-        tk.Label(self.list_frame, text=msg, font=("Courier", 10),
+        tk.Label(self.list_frame, text=msg, font=(FONT_FAMILY, 10),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
                 justify="left", anchor="w").pack(fill="x")
 
@@ -705,7 +729,7 @@ class CountdownWidget(BaseWidget):
 
         self.lbl_event = tk.Label(
             self.inner, text=self._label_text,
-            font=("Courier", 14 if self.big else 11),
+            font=(FONT_FAMILY, 14 if self.big else 11),
             bg=self.colors["widget_bg"], fg=self.colors["accent"],
         )
         self.lbl_event.pack(pady=(4, 0))
@@ -713,14 +737,14 @@ class CountdownWidget(BaseWidget):
         cd_fs = 32 if self.big else 20
         self.lbl_cd = tk.Label(
             self.inner, text="-- Tage",
-            font=("Courier", cd_fs, "bold"),
+            font=(FONT_FAMILY, cd_fs, "bold"),
             bg=self.colors["widget_bg"], fg=self.colors["text"],
         )
         self.lbl_cd.pack(pady=10)
 
         self.lbl_date = tk.Label(
             self.inner, text="",
-            font=("Courier", 10),
+            font=(FONT_FAMILY, 10),
             bg=self.colors["widget_bg"], fg=self.colors["muted"],
         )
         self.lbl_date.pack()
@@ -775,7 +799,7 @@ def make_widget(parent, key, colors, big, settings):
     cls = WIDGET_CLASSES.get(key)
     if cls:
         return cls(parent, colors, big=big, settings=settings)
-    tk.Label(parent, text=f"[{key}]", font=("Courier", 12),
+    tk.Label(parent, text=f"[{key}]", font=(FONT_FAMILY, 12),
             bg=colors["widget_bg"], fg=colors["muted"]).pack()
 
 
@@ -805,6 +829,7 @@ class Dashboard(tk.Tk):
         self.destroy()
         python = sys.executable
         os.execl(python, python, *sys.argv)
+
     def _build_ui(self):
         c          = self.colors
         widgets_en = self.settings.get("widgets") or {}
@@ -817,24 +842,27 @@ class Dashboard(tk.Tk):
         if starred_key not in enabled:
             starred_key = enabled[0]
 
-        secondary = [k for k in enabled if k != starred_key]
+        secondary = [k for k in enabled if k != starred_key][:2]
 
         root_frame = tk.Frame(self, bg=c["bg"])
-        root_frame.pack(fill="both", expand=True, padx=18, pady=14)
+        root_frame.pack(fill="both", expand=True, padx=22, pady=18)
 
         self._build_header(root_frame)
-        content = tk.Frame(root_frame, bg=c["bg"])
-        content.pack(fill="both", expand=True, pady=(8, 0))
 
-        left = tk.Frame(content, bg=c["bg"])
-        left.pack(side="left", fill="both", expand=True, padx=(0, 10))
-        make_widget(left, starred_key, c, big=True, settings=self.settings)
-        if secondary:
-            right = tk.Frame(content, bg=c["bg"], width=340)
-            right.pack(side="right", fill="both")
-            right.pack_propagate(False)
-            for key in secondary[:3]:
-                make_widget(right, key, c, big=False, settings=self.settings)
+        content = tk.Frame(root_frame, bg=c["bg"])
+        content.pack(fill="both", expand=True, pady=(14, 0))
+
+        sidebar = tk.Frame(content, bg=c["bg"], width=320)
+        sidebar.pack(side="left", fill="y", padx=(0, 16))
+        sidebar.pack_propagate(False)
+
+        main_area = tk.Frame(content, bg=c["bg"])
+        main_area.pack(side="right", fill="both", expand=True)
+
+        for key in secondary:
+            make_widget(sidebar, key, c, big=False, settings=self.settings)
+
+        make_widget(main_area, starred_key, c, big=True, settings=self.settings)
 
         self._build_footer(root_frame)
 
@@ -846,13 +874,13 @@ class Dashboard(tk.Tk):
         tk.Label(
             hdr,
             text="▣  DASHBOARD",
-            font=("Courier", 20, "bold"),
+            font=(FONT_FAMILY, 20, "bold"),
             bg=c["bg"], fg=c["accent"],
         ).pack(side="left")
 
         self._hdr_clock = tk.Label(
             hdr, text="",
-            font=("Courier", 14, "bold"),
+            font=(FONT_FAMILY, 14, "bold"),
             bg=c["bg"], fg=c["accent"],
         )
         self._hdr_clock.pack(side="right", padx=(0, 4))
@@ -872,7 +900,7 @@ class Dashboard(tk.Tk):
         tk.Label(
             footer,
             text="ESC Vollbild verlassen   F11 Vollbild   R Neu laden   Q Beenden",
-            font=("Courier", 9),
+            font=(FONT_FAMILY, 9),
             bg=c["bg"], fg=c["muted"],
         ).pack(side="left")
 
@@ -881,7 +909,7 @@ class Dashboard(tk.Tk):
             tk.Label(
                 footer,
                 text=f"📍 {location}",
-                font=("Courier", 9),
+                font=(FONT_FAMILY, 9),
                 bg=c["bg"], fg=c["muted"],
             ).pack(side="right")
 
