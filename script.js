@@ -1,52 +1,48 @@
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
 
-// Client-ID should ideally come from backend, but for frontend-only OAuth this is needed
-// This is the public client_id, not a secret (the secret is only used server-side)
 const CLIENT_ID = "165264914036-un16aets246l3a45v0lu9ro70jr3je6v.apps.googleusercontent.com";
 const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly';
 
-// Security: Prevent direct file access to sensitive files
-// This is a client-side check, server-side protection is in index.js
 const FORBIDDEN_FILES = ['.env', 'client_secret', '.json', 'settings.json'];
 if (FORBIDDEN_FILES.some(file => window.location.pathname.includes(file))) {
-  console.warn('Access to sensitive file blocked');
-  window.location.href = '/index.html';
+ console.warn('Access to sensitive file blocked');
+ window.location.href = '/index.html';
 }
 
 function _checkGoogleEnvironment() {
-    if (window.location.protocol === 'file:') {
-        showNotification('ERROR: Open via http://localhost:8000, not by double-clicking the file!', 'error');
-        console.error("GOOGLE AUTH ERROR: Page opened via file:// protocol. You MUST access it via http://localhost:8000");
-        return false;
-    }
-    console.log("Google Auth Environment:", {
-        origin: window.location.origin,
-        protocol: window.location.protocol,
-        href: window.location.href,
-        clientId: CLIENT_ID
-    });
-    return true;
+ if (window.location.protocol === 'file:') {
+ showNotification('ERROR: Open via http://localhost:8000, not by double-clicking the file!', 'error');
+ console.error("GOOGLE AUTH ERROR: Page opened via file:// protocol. You MUST access it via http://localhost:8000");
+ return false;
+ }
+ console.log("Google Auth Environment:", {
+ origin: window.location.origin,
+ protocol: window.location.protocol,
+ href: window.location.href,
+ clientId: CLIENT_ID
+ });
+ return true;
 }
 
 function _onGoogleTokenReceived(tokenResponse) {
-    if (tokenResponse.error) {
-        console.error("Google OAuth error:", tokenResponse.error, tokenResponse.error_description);
-        let msg = `Google error: ${tokenResponse.error}`;
-        if (tokenResponse.error === 'unauthorized_client' || tokenResponse.error === 'access_denied') {
-            msg = 'Google: unauthorized. Check: (1) Are you a TEST USER in Google Cloud? (2) Is the JS origin added exactly? (3) Are Gmail/Calendar APIs activated? (4) Is App in Testing & your email added?';
-        }
-        showNotification(msg, 'error');
-        return;
-    }
-    if (tokenResponse.access_token) {
-        localStorage.setItem('google_access_token', tokenResponse.access_token);
-        localStorage.setItem('google_refresh_token', tokenResponse.refresh_token || '');
-        showNotification('Google account connected!');
-        refreshCalendarStatus();
-        refreshNotificationsStatus();
-    } else {
-        showNotification('Failed to connect Google account.');
-    }
+ if (tokenResponse.error) {
+ console.error("Google OAuth error:", tokenResponse.error, tokenResponse.error_description);
+ let msg = `Google error: ${tokenResponse.error}`;
+ if (tokenResponse.error === 'unauthorized_client' || tokenResponse.error === 'access_denied') {
+ msg = 'Google: unauthorized. Check: (1) Are you a TEST USER in Google Cloud? (2) Is the JS origin added exactly? (3) Are Gmail/Calendar APIs activated? (4) Is App in Testing & your email added?';
+ }
+ showNotification(msg, 'error');
+ return;
+ }
+ if (tokenResponse.access_token) {
+ localStorage.setItem('google_access_token', tokenResponse.access_token);
+ localStorage.setItem('google_refresh_token', tokenResponse.refresh_token || '');
+ showNotification('Google account connected!');
+ refreshCalendarStatus();
+ refreshNotificationsStatus();
+ } else {
+ showNotification('Failed to connect Google account.');
+ }
 }
 
 const connectBtn = document.getElementById('connect-google-calendar-btn');
@@ -62,351 +58,343 @@ const messagesList = document.getElementById('notifications-messages-list');
 let stockCryptoSelection = null;
 
 if (connectBtn) {
-    connectBtn.addEventListener('click', () => {
-        if (!_checkGoogleEnvironment()) return;
-        const client = google.accounts.oauth2.initTokenClient({
-            client_id: CLIENT_ID,
-            scope: GOOGLE_SCOPES,
-            ux_mode: 'popup',
-            error_callback: _onGoogleTokenReceived,
-            callback: _onGoogleTokenReceived,
-        });
-        client.requestAccessToken();
-    });
+ connectBtn.addEventListener('click', () => {
+ if (!_checkGoogleEnvironment()) return;
+ const client = google.accounts.oauth2.initTokenClient({
+ client_id: CLIENT_ID,
+ scope: GOOGLE_SCOPES,
+ ux_mode: 'popup',
+ error_callback: _onGoogleTokenReceived,
+ callback: _onGoogleTokenReceived,
+ });
+ client.requestAccessToken();
+ });
 }
 
 if (connectMailBtn) {
-    connectMailBtn.addEventListener('click', () => {
-        if (!_checkGoogleEnvironment()) return;
-        const client = google.accounts.oauth2.initTokenClient({
-            client_id: CLIENT_ID,
-            scope: GOOGLE_SCOPES,
-            ux_mode: 'popup',
-            error_callback: _onGoogleTokenReceived,
-            callback: _onGoogleTokenReceived,
-        });
-        client.requestAccessToken();
-    });
+ connectMailBtn.addEventListener('click', () => {
+ if (!_checkGoogleEnvironment()) return;
+ const client = google.accounts.oauth2.initTokenClient({
+ client_id: CLIENT_ID,
+ scope: GOOGLE_SCOPES,
+ ux_mode: 'popup',
+ error_callback: _onGoogleTokenReceived,
+ callback: _onGoogleTokenReceived,
+ });
+ client.requestAccessToken();
+ });
 }
 
 if (disconnectBtn) {
-    disconnectBtn.addEventListener('click', () => {
-        localStorage.removeItem('google_access_token');
-        localStorage.removeItem('google_refresh_token');
-        showNotification('Google Calendar disconnected.');
-        refreshCalendarStatus();
-    });
+ disconnectBtn.addEventListener('click', () => {
+ localStorage.removeItem('google_access_token');
+ localStorage.removeItem('google_refresh_token');
+ showNotification('Google Calendar disconnected.');
+ refreshCalendarStatus();
+ });
 }
 
 if (disconnectMailBtn) {
-    disconnectMailBtn.addEventListener('click', () => {
-        localStorage.removeItem('google_access_token');
-        localStorage.removeItem('google_refresh_token');
-        showNotification('Google Mail disconnected.');
-        refreshNotificationsStatus();
-    });
+ disconnectMailBtn.addEventListener('click', () => {
+ localStorage.removeItem('google_access_token');
+ localStorage.removeItem('google_refresh_token');
+ showNotification('Google Mail disconnected.');
+ refreshNotificationsStatus();
+ });
 }
 
 async function refreshCalendarStatus() {
-    if (!calendarStatus) return;
-    const accessToken = localStorage.getItem('google_access_token');
-    if (!accessToken) {
-        calendarStatus.textContent = "Not connected.";
-        if (connectBtn) connectBtn.style.display = "inline-block";
-        if (disconnectBtn) disconnectBtn.style.display = "none";
-        if (eventsList) eventsList.innerHTML = "";
-        return;
-    }
+ if (!calendarStatus) return;
+ const accessToken = localStorage.getItem('google_access_token');
+ if (!accessToken) {
+ calendarStatus.textContent = "Not connected.";
+ if (connectBtn) connectBtn.style.display = "inline-block";
+ if (disconnectBtn) disconnectBtn.style.display = "none";
+ if (eventsList) eventsList.innerHTML = "";
+ return;
+ }
 
-    try {
-        const response = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${accessToken}`);
-        if (response.ok) {
-            calendarStatus.textContent = "Connected to Google Calendar.";
-            if (connectBtn) connectBtn.style.display = "none";
-            if (disconnectBtn) disconnectBtn.style.display = "inline-block";
-            loadCalendarEvents();
-        } else {
-            throw new Error('Token invalid');
-        }
-    } catch (e) {
-        calendarStatus.textContent = "Not connected.";
-        if (connectBtn) connectBtn.style.display = "inline-block";
-        if (disconnectBtn) disconnectBtn.style.display = "none";
-        localStorage.removeItem('google_access_token');
-        localStorage.removeItem('google_refresh_token');
-    }
+ try {
+ const response = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${accessToken}`);
+ if (response.ok) {
+ calendarStatus.textContent = "Connected to Google Calendar.";
+ if (connectBtn) connectBtn.style.display = "none";
+ if (disconnectBtn) disconnectBtn.style.display = "inline-block";
+ loadCalendarEvents();
+ } else {
+ throw new Error('Token invalid');
+ }
+ } catch (e) {
+ calendarStatus.textContent = "Not connected.";
+ if (connectBtn) connectBtn.style.display = "inline-block";
+ if (disconnectBtn) disconnectBtn.style.display = "none";
+ localStorage.removeItem('google_access_token');
+ localStorage.removeItem('google_refresh_token');
+ }
 }
 
 async function loadCalendarEvents() {
-    if (!eventsList) return;
-    const accessToken = localStorage.getItem('google_access_token');
-    if (!accessToken) {
-        eventsList.innerHTML = "<li>Not connected to Google Calendar.</li>";
-        return;
-    }
+ if (!eventsList) return;
+ const accessToken = localStorage.getItem('google_access_token');
+ if (!accessToken) {
+ eventsList.innerHTML = "<li>Not connected to Google Calendar.</li>";
+ return;
+ }
 
-    try {
-        const response = await fetch(
-            `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=10&singleEvents=true&orderBy=startTime`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-        if (!response.ok) {
-            throw new Error('Failed to fetch events');
-        }
-        const data = await response.json();
-        eventsList.innerHTML = "";
-        if (!data.items || data.items.length === 0) {
-            eventsList.innerHTML = "<li>No upcoming events.</li>";
-            return;
-        }
-        data.items.forEach(event => {
-            const li = document.createElement("li");
-            const start = event.start?.dateTime || event.start?.date || "";
-            const startLabel = start ? new Date(start).toLocaleString() : "";
-            li.textContent = `${startLabel} — ${event.summary ?? "(no title)"}`;
-            eventsList.appendChild(li);
-        });
-    } catch (e) {
-        eventsList.innerHTML = "<li>Failed to load events.</li>";
-        console.error('Error loading calendar events:', e);
-    }
+ try {
+ const response = await fetch(
+ `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=10&singleEvents=true&orderBy=startTime`,
+ {
+ headers: {
+ 'Authorization': `Bearer ${accessToken}`,
+ 'Content-Type': 'application/json',
+ },
+ }
+ );
+ if (!response.ok) {
+ throw new Error('Failed to fetch events');
+ }
+ const data = await response.json();
+ eventsList.innerHTML = "";
+ if (!data.items || data.items.length === 0) {
+ eventsList.innerHTML = "<li>No upcoming events.</li>";
+ return;
+ }
+ data.items.forEach(event => {
+ const li = document.createElement("li");
+ const start = event.start?.dateTime || event.start?.date || "";
+ const startLabel = start ? new Date(start).toLocaleString() : "";
+ li.textContent = `${startLabel} — ${event.summary ?? "(no title)"}`;
+ eventsList.appendChild(li);
+ });
+ } catch (e) {
+ eventsList.innerHTML = "<li>Failed to load events.</li>";
+ console.error('Error loading calendar events:', e);
+ }
 }
 
 async function refreshNotificationsStatus() {
-    if (!notificationsStatus) return;
-    const accessToken = localStorage.getItem('google_access_token');
-    if (!accessToken) {
-        notificationsStatus.textContent = "Not connected.";
-        if (connectMailBtn) connectMailBtn.style.display = "inline-block";
-        if (disconnectMailBtn) disconnectMailBtn.style.display = "none";
-        if (messagesList) messagesList.innerHTML = "";
-        return;
-    }
+ if (!notificationsStatus) return;
+ const accessToken = localStorage.getItem('google_access_token');
+ if (!accessToken) {
+ notificationsStatus.textContent = "Not connected.";
+ if (connectMailBtn) connectMailBtn.style.display = "inline-block";
+ if (disconnectMailBtn) disconnectMailBtn.style.display = "none";
+ if (messagesList) messagesList.innerHTML = "";
+ return;
+ }
 
-    try {
-        const response = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${accessToken}`);
-        if (response.ok) {
-            notificationsStatus.textContent = "Connected to Google Mail.";
-            if (connectMailBtn) connectMailBtn.style.display = "none";
-            if (disconnectMailBtn) disconnectMailBtn.style.display = "inline-block";
-            loadMessages();
-        } else {
-            throw new Error('Token invalid');
-        }
-    } catch (e) {
-        notificationsStatus.textContent = "Not connected.";
-        if (connectMailBtn) connectMailBtn.style.display = "inline-block";
-        if (disconnectMailBtn) disconnectMailBtn.style.display = "none";
-        localStorage.removeItem('google_access_token');
-        localStorage.removeItem('google_refresh_token');
-    }
+ try {
+ const response = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${accessToken}`);
+ if (response.ok) {
+ notificationsStatus.textContent = "Connected to Google Mail.";
+ if (connectMailBtn) connectMailBtn.style.display = "none";
+ if (disconnectMailBtn) disconnectMailBtn.style.display = "inline-block";
+ loadMessages();
+ } else {
+ throw new Error('Token invalid');
+ }
+ } catch (e) {
+ notificationsStatus.textContent = "Not connected.";
+ if (connectMailBtn) connectMailBtn.style.display = "inline-block";
+ if (disconnectMailBtn) disconnectMailBtn.style.display = "none";
+ localStorage.removeItem('google_access_token');
+ localStorage.removeItem('google_refresh_token');
+ }
 }
 
 async function loadMessages() {
-    if (!messagesList) return;
-    const accessToken = localStorage.getItem('google_access_token');
-    if (!accessToken) {
-        messagesList.innerHTML = "<li>Not connected to Google Mail.</li>";
-        return;
-    }
+ if (!messagesList) return;
+ const accessToken = localStorage.getItem('google_access_token');
+ if (!accessToken) {
+ messagesList.innerHTML = "<li>Not connected to Google Mail.</li>";
+ return;
+ }
 
-    try {
-        const response = await fetch(
-            `https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=5`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-        if (!response.ok) {
-            throw new Error('Failed to fetch messages');
-        }
-        const data = await response.json();
-        messagesList.innerHTML = "";
-        if (!data.messages || data.messages.length === 0) {
-            messagesList.innerHTML = "<li>No messages found.</li>";
-            return;
-        }
-        for (const message of data.messages) {
-            const msgResponse = await fetch(
-                `https://www.googleapis.com/gmail/v1/users/me/messages/${message.id}`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json',
-                    },
-                }
-            );
-            if (!msgResponse.ok) continue;
-            const msgData = await msgResponse.json();
-            const li = document.createElement("li");
-            const subject = msgData.payload?.headers?.find(h => h.name === "Subject")?.value || "(no subject)";
-            const from = msgData.payload?.headers?.find(h => h.name === "From")?.value || "(unknown sender)";
-            const snippet = msgData.snippet || "";
-            li.innerHTML = `<strong>${subject}</strong><br>${from}<br><small>${snippet}</small>`;
-            messagesList.appendChild(li);
-        }
-    } catch (e) {
-        messagesList.innerHTML = "<li>Failed to load messages.</li>";
-        console.error('Error loading messages:', e);
-    }
+ try {
+ const response = await fetch(
+ `https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=5`,
+ {
+ headers: {
+ 'Authorization': `Bearer ${accessToken}`,
+ 'Content-Type': 'application/json',
+ },
+ }
+ );
+ if (!response.ok) {
+ throw new Error('Failed to fetch messages');
+ }
+ const data = await response.json();
+ messagesList.innerHTML = "";
+ if (!data.messages || data.messages.length === 0) {
+ messagesList.innerHTML = "<li>No messages found.</li>";
+ return;
+ }
+ for (const message of data.messages) {
+ const msgResponse = await fetch(
+ `https://www.googleapis.com/gmail/v1/users/me/messages/${message.id}`,
+ {
+ headers: {
+ 'Authorization': `Bearer ${accessToken}`,
+ 'Content-Type': 'application/json',
+ },
+ }
+ );
+ if (!msgResponse.ok) continue;
+ const msgData = await msgResponse.json();
+ const li = document.createElement("li");
+ const subject = msgData.payload?.headers?.find(h => h.name === "Subject")?.value || "(no subject)";
+ const from = msgData.payload?.headers?.find(h => h.name === "From")?.value || "(unknown sender)";
+ const snippet = msgData.snippet || "";
+ li.innerHTML = `<strong>${subject}</strong><br>${from}<br><small>${snippet}</small>`;
+ messagesList.appendChild(li);
+ }
+ } catch (e) {
+ messagesList.innerHTML = "<li>Failed to load messages.</li>";
+ console.error('Error loading messages:', e);
+ }
 }
 
 function handleGoogleRedirectParams() {
-    // initTokenClient uses a popup (no redirect), so no URL params from Google are expected.
-    // Clean up any stale query parameters from a previous redirect flow attempt.
-    const url = new URL(window.location.href);
-    if (url.searchParams.has('code') || url.searchParams.has('error')) {
-        window.history.replaceState({}, '', url.pathname + url.hash);
-    }
+ const url = new URL(window.location.href);
+ if (url.searchParams.has('code') || url.searchParams.has('error')) {
+ window.history.replaceState({}, '', url.pathname + url.hash);
+ }
 }
 
 async function loadSettings() {
-    try {
-        const res = await fetch(`${API_BASE}/load`);
-        if (!res.ok) return;
-        const s = await res.json();
+ try {
+ const res = await fetch(`${API_BASE}/load`);
+ if (!res.ok) return;
+ const s = await res.json();
 
-        if (s.location)      document.getElementById("location").value = s.location;
-        if (s.useIpLocation) {
-            document.getElementById("use-ip-location").checked = true;
-            document.getElementById("location").disabled = true;
-        }
+ if (s.location) document.getElementById("location").value = s.location;
+ if (s.useIpLocation) {
+ document.getElementById("use-ip-location").checked = true;
+ document.getElementById("location").disabled = true;
+ }
 
-        if (s.widgets) {
-            for (const [key, value] of Object.entries(s.widgets)) {
-                const map = {
-                    weather: "weather-widget", notifications: "notifications-widget",
-                    dateTime: "date-time-widget", countdown: "countdown-widget",
-                    calendar: "calendar-widget", stockCrypto: "stock-crypto-widget"
-                };
-                if (map[key]) document.getElementById(map[key]).checked = value;
-            }
-            syncWidgetStars();
-        }
+ if (s.widgets) {
+ for (const [key, value] of Object.entries(s.widgets)) {
+ const map = { weather: "weather-widget", notifications: "notifications-widget", dateTime: "date-time-widget", countdown: "countdown-widget", calendar: "calendar-widget", stockCrypto: "stock-crypto-widget" };
+ if (map[key]) document.getElementById(map[key]).checked = value;
+ }
+ syncWidgetStars();
+ }
 
-        if (s.starredWidget) {
-            const star = document.getElementById(s.starredWidget);
-            if (star) star.checked = true;
-        }
+ if (s.starredWidget) {
+ const star = document.getElementById(s.starredWidget);
+ if (star) star.checked = true;
+ }
 
-        if (s.theme)       document.getElementById("theme-select").value = s.theme;
-        if (s.customColor) document.getElementById("custom-color").value = s.customColor;
-        if (s.themeMode === "custom") {
-            document.getElementById("theme-mode-custom").checked = true;
-            document.getElementById("theme-mode-preset").checked = false;
-        } else if (s.themeMode === "preset") {
-            document.getElementById("theme-mode-preset").checked = true;
-            document.getElementById("theme-mode-custom").checked = false;
-        }
-        document.getElementById("theme-select").disabled =
-            document.getElementById("theme-mode-custom").checked;
-        document.getElementById("custom-color").disabled =
-            document.getElementById("theme-mode-preset").checked;
+ if (s.theme) document.getElementById("theme-select").value = s.theme;
+ if (s.customColor) document.getElementById("custom-color").value = s.customColor;
+ if (s.themeMode === "custom") {
+ document.getElementById("theme-mode-custom").checked = true;
+ document.getElementById("theme-mode-preset").checked = false;
+ } else if (s.themeMode === "preset") {
+ document.getElementById("theme-mode-preset").checked = true;
+ document.getElementById("theme-mode-custom").checked = false;
+ }
+ document.getElementById("theme-select").disabled =
+ document.getElementById("theme-mode-custom").checked;
+ document.getElementById("custom-color").disabled =
+ document.getElementById("theme-mode-preset").checked;
 
-        if (s.stockCryptoSelection) {
-            stockCryptoSelection = s.stockCryptoSelection;
-            renderStockCryptoSelection();
-        }
+ if (s.stockCryptoSelection) {
+ stockCryptoSelection = s.stockCryptoSelection;
+ renderStockCryptoSelection();
+ }
 
-    } catch (e) {
-        console.log("No saved settings found.");
-    }
+ } catch (e) {
+ console.log("No saved settings found.");
+ }
 }
 
 async function getCoordinates(locationName) {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=1`;
-    const res = await fetch(url, {
-        headers: { "Accept-Language": "en" }
-    });
-    const data = await res.json();
+ const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=1`;
+ const res = await fetch(url, { headers: { "Accept-Language": "en" } });
+ const data = await res.json();
 
-    if (data.length === 0) return null;
+ if (data.length === 0) return null;
 
-    return {
-        lat: data[0].lat,
-        lon: data[0].lon,
-        displayName: data[0].display_name
-    };
+ return {
+ lat: data[0].lat,
+ lon: data[0].lon,
+ displayName: data[0].display_name
+ };
 }
 
 async function getIpLocation() {
-    const res = await fetch("https://ipapi.co/json/");
-    const data = await res.json();
-    return {
-        lat: data.latitude,
-        lon: data.longitude,
-        displayName: data.city + ", " + data.country_name
-    };
+ const res = await fetch("https://ipapi.co/json/");
+ const data = await res.json();
+ return {
+ lat: data.latitude,
+ lon: data.longitude,
+ displayName: data.city + ", " + data.country_name
+ };
 }
 
 function showSection(sectionId) {
-    const homeSection = document.getElementById("home");
-    const dashboardSection = document.getElementById("dashboard");
-    const settingsSection = document.getElementById("settings");
-    const aboutSection = document.getElementById("About-me");
+ const homeSection = document.getElementById("home");
+ const dashboardSection = document.getElementById("dashboard");
+ const settingsSection = document.getElementById("settings");
+ const aboutSection = document.getElementById("about");
 
-    if (homeSection) homeSection.style.display = sectionId === "home" ? "block" : "none";
-    if (dashboardSection) dashboardSection.style.display = sectionId === "dashboard" ? "flex" : "none";
-    if (settingsSection) settingsSection.style.display = sectionId === "settings" ? "block" : "none";
-    if (aboutSection) aboutSection.style.display = sectionId === "about" ? "block" : "none";
+ if (homeSection) homeSection.style.display = sectionId === "home" ? "block" : "none";
+ if (dashboardSection) dashboardSection.style.display = sectionId === "dashboard" ? "flex" : "none";
+ if (settingsSection) settingsSection.style.display = sectionId === "settings" ? "block" : "none";
+ if (aboutSection) aboutSection.style.display = sectionId === "about" ? "block" : "none";
 }
 
 function goHome() {
-    const homeSection = document.getElementById("home");
+ const homeSection = document.getElementById("home");
 
-    if (homeSection) {
-        showSection("home");
-        window.location.hash = "home";
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-    }
+ if (homeSection) {
+ showSection("home");
+ window.location.hash = "home";
+ window.scrollTo({ top: 0, behavior: "smooth" });
+ return;
+ }
 
-    window.location.href = "/index.html#home";
+ window.location.href = "/index.html#home";
 }
 
 function initializeHomeView() {
-    if (!document.getElementById("home")) {
-        return;
-    }
+ if (!document.getElementById("home")) {
+ return;
+ }
 
-    showSection("home");
-    window.scrollTo(0, 0);
+ showSection("home");
+ window.scrollTo(0, 0);
 }
 
 document.getElementById("redirect-start-btn").addEventListener("click", function(e) {
-    e.preventDefault();
-    window.location.href = "/dashboard.html";
+ e.preventDefault();
+ window.location.href = "/dashboard.html";
 });
 
 document.getElementById("home-btn").addEventListener("click", function(e) {
-    e.preventDefault();
-    goHome();
+ e.preventDefault();
+ goHome();
 });
 
 document.getElementById("settings-btn").addEventListener("click", function(e) {
-    e.preventDefault();
-    window.location.href = "/settings.html";
+ e.preventDefault();
+ window.location.href = "/settings.html";
 });
 
 document.getElementById("about-btn").addEventListener("click", function(e) {
-    e.preventDefault();
-window.location.href = "/about.html";
+ e.preventDefault();
+ window.location.href = "/about.html";
 });
 
 const checkbox = document.getElementById("use-ip-location");
-const textfeld = document.getElementById("location");
-if (checkbox && textfeld) {
-    checkbox.addEventListener("change", function() {
-        textfeld.disabled = checkbox.checked;
-    });
+const textfield = document.getElementById("location");
+if (checkbox && textfield) {
+ checkbox.addEventListener("change", function() {
+ textfield.disabled = checkbox.checked;
+ });
 }
 
 const themeModePreset = document.getElementById("theme-mode-preset");
@@ -415,61 +403,61 @@ const themeSelect = document.getElementById("theme-select");
 const customColorInput = document.getElementById("custom-color");
 
 if (themeModePreset && themeModeCustom && themeSelect && customColorInput) {
-    themeSelect.disabled = themeModeCustom.checked; 
-    customColorInput.disabled = themeModePreset.checked; 
+ themeSelect.disabled = themeModeCustom.checked;
+ customColorInput.disabled = themeModePreset.checked;
 
-    themeModePreset.addEventListener("change", () => {
-        if (themeModePreset.checked) {
-            themeModeCustom.checked = false;
-        }
-        themeSelect.disabled = themeModeCustom.checked;
-        customColorInput.disabled = themeModePreset.checked;
-    });
+ themeModePreset.addEventListener("change", () => {
+ if (themeModePreset.checked) {
+ themeModeCustom.checked = false;
+ }
+ themeSelect.disabled = themeModeCustom.checked;
+ customColorInput.disabled = themeModePreset.checked;
+ });
 
-    themeModeCustom.addEventListener("change", () => {
-        if (themeModeCustom.checked) {
-            themeModePreset.checked = false;
-        }
-        themeSelect.disabled = themeModeCustom.checked;
-        customColorInput.disabled = themeModePreset.checked;
-    });
+ themeModeCustom.addEventListener("change", () => {
+ if (themeModeCustom.checked) {
+ themeModePreset.checked = false;
+ }
+ themeSelect.disabled = themeModeCustom.checked;
+ customColorInput.disabled = themeModePreset.checked;
+ });
 }
 
 const checkboxes = document.querySelectorAll('.limited-checkbox');
 
 checkboxes.forEach(checkbox => {
-    checkbox.addEventListener('change', () => {
-        const checked = document.querySelectorAll('.limited-checkbox:checked');
-        if (checked.length > 3) {
-            checkbox.checked = false;
-        }
-    });
+ checkbox.addEventListener('change', () => {
+ const checked = document.querySelectorAll('.limited-checkbox:checked');
+ if (checked.length > 3) {
+ checkbox.checked = false;
+ }
+ });
 });
 
 const widgetCheckboxes = document.querySelectorAll('#widgets-list .limited-checkbox');
 
 function syncWidgetStars() {
-    widgetCheckboxes.forEach(widgetCheckbox => {
-        const widgetItem = widgetCheckbox.closest('li');
-        const starButton = widgetItem ? widgetItem.querySelector('.star-checkbox') : null;
+ widgetCheckboxes.forEach(widgetCheckbox => {
+ const widgetItem = widgetCheckbox.closest('li');
+ const starButton = widgetItem ? widgetItem.querySelector('.star-checkbox') : null;
 
-        if (!starButton) return;
+ if (!starButton) return;
 
-        starButton.disabled = !widgetCheckbox.checked;
+ starButton.disabled = !widgetCheckbox.checked;
 
-        if (!widgetCheckbox.checked) {
-            starButton.checked = false;
-        }
-    });
+ if (!widgetCheckbox.checked) {
+ starButton.checked = false;
+ }
+ });
 }
 
 widgetCheckboxes.forEach(widgetCheckbox => {
-    widgetCheckbox.addEventListener('change', syncWidgetStars);
+ widgetCheckbox.addEventListener('change', syncWidgetStars);
 });
 
 syncWidgetStars();
 if (document.getElementById("location")) {
-    loadSettings();
+ loadSettings();
 }
 
 window.addEventListener("load", initializeHomeView);
@@ -479,17 +467,17 @@ const notificationText = notification.querySelector(".site-notification__text");
 let notificationTimer;
 
 function showNotification(message, type = "info") {
-    clearTimeout(notificationTimer);
+ clearTimeout(notificationTimer);
 
-    notificationText.textContent = message;
+ notificationText.textContent = message;
 
-    notification.className = "site-notification";
-    notification.classList.add("site-notification-visible");
-    notification.classList.add(`site-notification--${type}`);
+ notification.className = "site-notification";
+ notification.classList.add("site-notification-visible");
+ notification.classList.add(`site-notification--${type}`);
 
-    notificationTimer = setTimeout(() => {
-        notification.className = "site-notification";
-    }, 3000);
+ notificationTimer = setTimeout(() => {
+ notification.className = "site-notification";
+ }, 3000);
 }
 
 const locationInput = document.getElementById("location");
@@ -497,149 +485,149 @@ const suggestionsList = document.getElementById("location-suggestions");
 let debounceTimer;
 
 if (locationInput && suggestionsList) {
-    locationInput.addEventListener("input", function() {
-        clearTimeout(debounceTimer);
-        const query = locationInput.value.trim();
+ locationInput.addEventListener("input", function() {
+ clearTimeout(debounceTimer);
+ const query = locationInput.value.trim();
 
-        if (query.length < 3) {
-            suggestionsList.innerHTML = "";
-            return;
-        }
+ if (query.length < 3) {
+ suggestionsList.innerHTML = "";
+ return;
+ }
 
-        debounceTimer = setTimeout(async () => {
-            const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`;
-            const res = await fetch(url, { headers: { "Accept-Language": "en" } });
-            const data = await res.json();
+ debounceTimer = setTimeout(async () => {
+ const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`;
+ const res = await fetch(url, { headers: { "Accept-Language": "en" } });
+ const data = await res.json();
 
-            suggestionsList.innerHTML = "";
-            data.forEach(place => {
-                const li = document.createElement("li");
-                li.textContent = place.display_name;
-                li.addEventListener("click", function() {
-                    locationInput.value = place.display_name;
-                    suggestionsList.innerHTML = "";
-                });
-                suggestionsList.appendChild(li);
-            });
-        }, 400);
-    });
-
-    document.addEventListener("click", function(e) {
-        if (e.target !== locationInput) {
-            suggestionsList.innerHTML = "";
-        }
-    });
+ suggestionsList.innerHTML = "";
+ data.forEach(place => {
+ const li = document.createElement("li");
+ li.textContent = place.display_name;
+ li.addEventListener("click", function() {
+ locationInput.value = place.display_name;
+ suggestionsList.innerHTML = "";
+ });
+ suggestionsList.appendChild(li);
+ });
+ }, 400);
+ });
 }
+
+ document.addEventListener("click", function(e) {
+ if (e.target !== locationInput) {
+ suggestionsList.innerHTML = "";
+ }
+ });
 
 const saveSettingsBtn = document.getElementById("save-settings-btn");
 
 if (saveSettingsBtn) {
-    saveSettingsBtn.addEventListener("click", async function() {
+ saveSettingsBtn.addEventListener("click", async function() {
 
-        const checked = document.querySelectorAll('.limited-checkbox:checked');
-        const starred = document.querySelector('input[name="widget-star"]:checked');
-        const presetThemeChecked = document.getElementById("theme-mode-preset").checked;
-        const customThemeChecked = document.getElementById("theme-mode-custom").checked;
-        const location = document.getElementById("location").value;
-        const useIp = document.getElementById("use-ip-location").checked;
+ const checked = document.querySelectorAll('.limited-checkbox:checked');
+ const starred = document.querySelector('input[name="widget-star"]:checked');
+ const presetThemeChecked = document.getElementById("theme-mode-preset").checked;
+ const customThemeChecked = document.getElementById("theme-mode-custom").checked;
+ const location = document.getElementById("location").value;
+ const useIp = document.getElementById("use-ip-location").checked;
 
-        if (checked.length === 0) {
-            showNotification("Please select at least one widget.", "error");
-            return;
-        }
+ if (checked.length === 0) {
+ showNotification("Please select at least one widget.", "error");
+ return;
+ }
 
-        if (!starred) {
-            showNotification("Please star at least one widget.", "error");
-            return;
-        }
+ if (!starred) {
+ showNotification("Please star at least one widget.", "error");
+ return;
+ }
 
-        if (!useIp && location.trim() === "") {
-            showNotification("Please enter a location or enable IP location.", "error");
-            return;
-        }
+ if (!useIp && location.trim() === "") {
+ showNotification("Please enter a location or enable IP location.", "error");
+ return;
+ }
 
-        if (!presetThemeChecked && !customThemeChecked) {
-            showNotification("Please select a theme.", "error");
-            return;
-        }
+ if (!presetThemeChecked && !customThemeChecked) {
+ showNotification("Please select a theme.", "error");
+ return;
+ }
 
-        let coords = null;
-        if (useIp) {
-            try {
-                coords = await getIpLocation();
-            } catch (e) {
-                showNotification("Could not determine IP location.", "error");
-                return;
-            }
-        } else {
-            coords = await getCoordinates(location);
-            if (!coords) {
-                showNotification("Location not found. Please try a different name.", "error");
-                return;
-            }
-        }
-        const settings = {
-        location: location,
-        coordinates: coords,
-        useIpLocation: useIp,
-        widgets: {
-            weather: document.getElementById("weather-widget").checked,
-            notifications: document.getElementById("notifications-widget").checked,
-            dateTime: document.getElementById("date-time-widget").checked,
-            countdown: document.getElementById("countdown-widget").checked,
-            calendar: document.getElementById("calendar-widget").checked,
-            stockCrypto: document.getElementById("stock-crypto-widget").checked,
-        },
-    starredWidget: document.querySelector('input[name="widget-star"]:checked')?.id ?? null,
-    theme: presetThemeChecked
-        ? document.getElementById("theme-select").value
-        : null,
-    customColor: customThemeChecked
-        ? document.getElementById("custom-color").value
-        : null,
-    themeMode: customThemeChecked
-        ? "custom"
-        : (presetThemeChecked ? "preset" : null),
-    countdownDate: document.getElementById("countdown-date").value,
-    stockCryptoSelection: stockCryptoSelection
-        };
+ let coords = null;
+ if (useIp) {
+ try {
+ coords = await getIpLocation();
+ } catch (e) {
+ showNotification("Could not determine IP location.", "error");
+ return;
+ }
+ } else {
+ coords = await getCoordinates(location);
+ if (!coords) {
+ showNotification("Location not found. Please try a different name.", "error");
+ return;
+ }
+ }
+ const settings = {
+ location: location,
+ coordinates: coords,
+ useIpLocation: useIp,
+ widgets: {
+ weather: document.getElementById("weather-widget").checked,
+ notifications: document.getElementById("notifications-widget").checked,
+ dateTime: document.getElementById("date-time-widget").checked,
+ countdown: document.getElementById("countdown-widget").checked,
+ calendar: document.getElementById("calendar-widget").checked,
+ stockCrypto: document.getElementById("stock-crypto-widget").checked,
+ },
+ starredWidget: document.querySelector('input[name="widget-star"]:checked')?.id ?? null,
+ theme: presetThemeChecked
+ ? document.getElementById("theme-select").value
+ : null,
+ customColor: customThemeChecked
+ ? document.getElementById("custom-color").value
+ : null,
+ themeMode: customThemeChecked
+ ? "custom"
+ : (presetThemeChecked ? "preset" : null),
+ countdownDate: document.getElementById("countdown-date").value,
+ stockCryptoSelection: stockCryptoSelection
+ };
 
-        try {
-            const res = await fetch(`${API_BASE}/save`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(settings)
-            });
+ try {
+ const res = await fetch(`${API_BASE}/save`, {
+ method: "POST",
+ headers: { "Content-Type": "application/json" },
+ body: JSON.stringify(settings)
+ });
 
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => null);
-                showNotification(errorData?.error ?? "Settings could not be saved.", "error");
-                return;
-            }
+ if (!res.ok) {
+ const errorData = await res.json().catch(() => null);
+ showNotification(errorData?.error ?? "Settings could not be saved.", "error");
+ return;
+ }
 
-            showNotification("Settings saved successfully.", "success");
-        } catch (error) {
-            console.error("Server not reachable:", error);
-            showNotification("Server not reachable. Settings were not saved.", "error");
-        }
-    });
+ showNotification("Settings saved successfully.", "success");
+ } catch (error) {
+ console.error("Server not reachable:", error);
+ showNotification("Server not reachable. Settings were not saved.", "error");
+ }
+ });
 }
 
 function updateModalOverlay() {
-    const modals = [
-        document.getElementById("countdown-window"),
-        document.getElementById("calendar-window"),
-        document.getElementById("notifications-window"),
-        document.getElementById("stock-crypto-window")
-    ];
-    
-    const hasOpenModal = modals.some(modal => modal && modal.style.display === "block");
-    
-    if (hasOpenModal) {
-        document.body.classList.add("modal-open");
-    } else {
-        document.body.classList.remove("modal-open");
-    }
+ const modals = [
+ document.getElementById("countdown-window"),
+ document.getElementById("calendar-window"),
+ document.getElementById("notifications-window"),
+ document.getElementById("stock-crypto-window")
+ ];
+
+ const hasOpenModal = modals.some(modal => modal && modal.style.display === "block");
+
+ if (hasOpenModal) {
+ document.body.classList.add("modal-open");
+ } else {
+ document.body.classList.remove("modal-open");
+ }
 }
 
 const countdownWidget = document.getElementById("countdown-widget");
@@ -649,36 +637,36 @@ const countdownDate = document.getElementById("countdown-date");
 const openCountdownBtn = document.getElementById("open-countdown-btn");
 
 function openCountdownWindow() {
-    if (!countdownWindow) return;
-    countdownWindow.style.display = "block";
-    updateModalOverlay();
-    if (countdownDate) countdownDate.focus();
+ if (!countdownWindow) return;
+ countdownWindow.style.display = "block";
+ updateModalOverlay();
+ if (countdownDate) countdownDate.focus();
 }
 
 if (countdownWidget) {
-    countdownWidget.addEventListener("change", function () {
-        if (countdownWidget.checked) {
-            openCountdownWindow();
-        } else if (countdownDate) {
-            countdownDate.value = "";
-        }
-    });
+ countdownWidget.addEventListener("change", function () {
+ if (countdownWidget.checked) {
+ openCountdownWindow();
+ } else if (countdownDate) {
+ countdownDate.value = "";
+ }
+ });
 }
 
 if (openCountdownBtn) {
-    openCountdownBtn.addEventListener("click", openCountdownWindow);
+ openCountdownBtn.addEventListener("click", openCountdownWindow);
 }
 
 if (closeCountdown && countdownWindow) {
-    closeCountdown.addEventListener("click", function () {
-        countdownWindow.style.display = "none";
-        updateModalOverlay();
-    });
+ closeCountdown.addEventListener("click", function () {
+ countdownWindow.style.display = "none";
+ updateModalOverlay();
+ });
 }
 
 if (calendarStatus) {
-    handleGoogleRedirectParams();
-    refreshCalendarStatus();
+ handleGoogleRedirectParams();
+ refreshCalendarStatus();
 }
 
 const calendarWidgetCheckbox = document.getElementById("calendar-widget");
@@ -687,33 +675,33 @@ const closeCalendarWindow = document.getElementById("close-calendar-window");
 const openCalendarBtn = document.getElementById("open-calendar-btn");
 
 function openCalendarWindow() {
-    if (calendarWindow) {
-        calendarWindow.style.display = "block";
-        updateModalOverlay();
-    }
+ if (calendarWindow) {
+ calendarWindow.style.display = "block";
+ updateModalOverlay();
+ }
 }
 
 if (calendarWidgetCheckbox) {
-    calendarWidgetCheckbox.addEventListener("change", function () {
-        if (calendarWidgetCheckbox.checked) {
-            openCalendarWindow();
-        }
-    });
+ calendarWidgetCheckbox.addEventListener("change", function () {
+ if (calendarWidgetCheckbox.checked) {
+ openCalendarWindow();
+ }
+ });
 }
 
 if (openCalendarBtn) {
-    openCalendarBtn.addEventListener("click", openCalendarWindow);
+ openCalendarBtn.addEventListener("click", openCalendarWindow);
 }
 
 if (closeCalendarWindow && calendarWindow) {
-    closeCalendarWindow.addEventListener("click", function () {
-        calendarWindow.style.display = "none";
-        updateModalOverlay();
-    });
+ closeCalendarWindow.addEventListener("click", function () {
+ calendarWindow.style.display = "none";
+ updateModalOverlay();
+ });
 }
 
 if (notificationsStatus) {
-    refreshNotificationsStatus();
+ refreshNotificationsStatus();
 }
 
 const notificationsWidgetCheckbox = document.getElementById("notifications-widget");
@@ -722,31 +710,30 @@ const closeNotificationsWindow = document.getElementById("close-notifications-wi
 const openNotificationsBtn = document.getElementById("open-notifications-btn");
 
 function openNotificationsWindow() {
-    if (notificationsWindow) {
-        notificationsWindow.style.display = "block";
-        updateModalOverlay();
-    }
+ if (notificationsWindow) {
+ notificationsWindow.style.display = "block";
+ updateModalOverlay();
+ }
 }
 
 if (notificationsWidgetCheckbox) {
-    notificationsWidgetCheckbox.addEventListener("change", function () {
-        if (notificationsWidgetCheckbox.checked) {
-            openNotificationsWindow();
-        }
-    });
+ notificationsWidgetCheckbox.addEventListener("change", function () {
+ if (notificationsWidgetCheckbox.checked) {
+ openNotificationsWindow();
+ }
+ });
 }
 
 if (openNotificationsBtn) {
-    openNotificationsBtn.addEventListener("click", openNotificationsWindow);
+ openNotificationsBtn.addEventListener("click", openNotificationsWindow);
 }
 
 if (closeNotificationsWindow && notificationsWindow) {
-    closeNotificationsWindow.addEventListener("click", function () {
-        notificationsWindow.style.display = "none";
-        updateModalOverlay();
-    });
+ closeNotificationsWindow.addEventListener("click", function () {
+ notificationsWindow.style.display = "none";
+ updateModalOverlay();
+ });
 }
-
 
 const stockCryptoWidgetCheckbox = document.getElementById("stock-crypto-widget");
 const stockCryptoWindow = document.getElementById("stock-crypto-window");
@@ -759,143 +746,143 @@ const saveStockCryptoBtn = document.getElementById("save-stock-crypto");
 const openStockCryptoBtn = document.getElementById("open-stock-crypto-btn");
 
 function openStockCryptoWindow() {
-    if (!stockCryptoWindow) return;
-    stockCryptoWindow.style.display = "block";
-    updateModalOverlay();
-    if (stockCryptoSearchInput) stockCryptoSearchInput.focus();
+ if (!stockCryptoWindow) return;
+ stockCryptoWindow.style.display = "block";
+ updateModalOverlay();
+ if (stockCryptoSearchInput) stockCryptoSearchInput.focus();
 }
 
 if (stockCryptoWidgetCheckbox) {
-    stockCryptoWidgetCheckbox.addEventListener("change", function () {
-        if (stockCryptoWidgetCheckbox.checked) {
-            openStockCryptoWindow();
-        }
-    });
+ stockCryptoWidgetCheckbox.addEventListener("change", function () {
+ if (stockCryptoWidgetCheckbox.checked) {
+ openStockCryptoWindow();
+ }
+ });
 }
 
 if (openStockCryptoBtn) {
-    openStockCryptoBtn.addEventListener("click", openStockCryptoWindow);
+ openStockCryptoBtn.addEventListener("click", openStockCryptoWindow);
 }
 
 if (closeStockCryptoWindow && stockCryptoWindow) {
-    closeStockCryptoWindow.addEventListener("click", function () {
-        stockCryptoWindow.style.display = "none";
-        updateModalOverlay();
-    });
+ closeStockCryptoWindow.addEventListener("click", function () {
+ stockCryptoWindow.style.display = "none";
+ updateModalOverlay();
+ });
 }
 
 function renderStockCryptoSelection() {
-    if (!stockCryptoSelectedBox || !stockCryptoSelectedLabel) return;
-    if (stockCryptoSelection) {
-        const typeLabel = stockCryptoSelection.type === "crypto" ? "Crypto" : "Stock";
-        stockCryptoSelectedLabel.textContent = `${stockCryptoSelection.name} (${stockCryptoSelection.symbol}) — ${typeLabel}`;
-        stockCryptoSelectedBox.style.display = "block";
-    } else {
-        stockCryptoSelectedBox.style.display = "none";
-    }
+ if (!stockCryptoSelectedBox || !stockCryptoSelectedLabel) return;
+ if (stockCryptoSelection) {
+ const typeLabel = stockCryptoSelection.type === "crypto" ? "Crypto" : "Stock";
+ stockCryptoSelectedLabel.textContent = `${stockCryptoSelection.name} (${stockCryptoSelection.symbol}) — ${typeLabel}`;
+ stockCryptoSelectedBox.style.display = "block";
+ } else {
+ stockCryptoSelectedBox.style.display = "none";
+ }
 }
 
 let stockCryptoDebounceTimer;
 
 if (stockCryptoSearchInput && stockCryptoSuggestions) {
-    stockCryptoSearchInput.addEventListener("input", function () {
-        clearTimeout(stockCryptoDebounceTimer);
-        const query = stockCryptoSearchInput.value.trim();
+ stockCryptoSearchInput.addEventListener("input", function () {
+ clearTimeout(stockCryptoDebounceTimer);
+ const query = stockCryptoSearchInput.value.trim();
 
-        if (query.length < 1) {
-            stockCryptoSuggestions.innerHTML = "";
-            return;
-        }
+ if (query.length < 1) {
+ stockCryptoSuggestions.innerHTML = "";
+ return;
+ }
 
-        stockCryptoDebounceTimer = setTimeout(async () => {
-            try {
-                const res = await fetch(`${API_BASE}/finance/search?q=${encodeURIComponent(query)}`);
-                const data = await res.json();
+ stockCryptoDebounceTimer = setTimeout(async () => {
+ try {
+ const res = await fetch(`${API_BASE}/finance/search?q=${encodeURIComponent(query)}`);
+ const data = await res.json();
 
-                stockCryptoSuggestions.innerHTML = "";
-                (data.results || []).forEach(result => {
-                    const li = document.createElement("li");
-                    const typeLabel = result.type === "crypto" ? "Crypto" : "Stock";
-                    li.textContent = `${result.name} (${result.symbol})`;
+ stockCryptoSuggestions.innerHTML = "";
+ (data.results || []).forEach(result => {
+ const li = document.createElement("li");
+ const typeLabel = result.type === "crypto" ? "Crypto" : "Stock";
+ li.textContent = `${result.name} (${result.symbol})`;
 
-                    const typeSpan = document.createElement("span");
-                    typeSpan.className = "suggestion-type";
-                    typeSpan.textContent = typeLabel;
-                    li.appendChild(typeSpan);
+ const typeSpan = document.createElement("span");
+ typeSpan.className = "suggestion-type";
+ typeSpan.textContent = typeLabel;
+ li.appendChild(typeSpan);
 
-                    li.addEventListener("click", function () {
-                        stockCryptoSelection = {
-                            type: result.type,
-                            symbol: result.symbol,
-                            name: result.name,
-                        };
-                        renderStockCryptoSelection();
-                        stockCryptoSearchInput.value = "";
-                        stockCryptoSuggestions.innerHTML = "";
-                    });
+ li.addEventListener("click", function () {
+ stockCryptoSelection = {
+ type: result.type,
+ symbol: result.symbol,
+ name: result.name,
+ };
+ renderStockCryptoSelection();
+ stockCryptoSearchInput.value = "";
+ stockCryptoSuggestions.innerHTML = "";
+ });
 
-                    stockCryptoSuggestions.appendChild(li);
-                });
-            } catch (e) {
-                stockCryptoSuggestions.innerHTML = "<li>Server not reachable.</li>";
-            }
-        }, 400);
-    });
+ stockCryptoSuggestions.appendChild(li);
+ });
+ } catch (e) {
+ stockCryptoSuggestions.innerHTML = "<li>Server not reachable.</li>";
+ }
+ }, 400);
+ });
 }
 
 if (saveStockCryptoBtn && stockCryptoWindow) {
-    saveStockCryptoBtn.addEventListener("click", function () {
-        stockCryptoWindow.style.display = "none";
-        updateModalOverlay();
-    });
+ saveStockCryptoBtn.addEventListener("click", function () {
+ stockCryptoWindow.style.display = "none";
+ updateModalOverlay();
+ });
 }
 
 (function () {
  const startBtn = document.getElementById("start-btn");
-  if (!startBtn) return;
+ if (!startBtn) return;
 
-    startBtn.addEventListener("click", async () => {
-    const originalText = startBtn.textContent;
-    startBtn.disabled = true;
-    startBtn.textContent = "Starting…";
+ startBtn.addEventListener("click", async () => {
+ const originalText = startBtn.textContent;
+ startBtn.disabled = true;
+ startBtn.textContent = "Starting...";
 
-    try {
-      const res = await fetch("/launch", { method: "POST" });
-      const data = await res.json();
+ try {
+ const res = await fetch("/launch", { method: "POST" });
+ const data = await res.json();
 
-      if (res.ok && data.status === "ok") {
-        showNotification("Dashboard gestartet ✓", "success");
-        startBtn.textContent = "Dashboard is running";
-        setTimeout(() => {
-          startBtn.disabled = false;
-          startBtn.textContent = originalText;
-        }, 4000);
-      } else {
-        const msg = data.error || "Unbekannter Fehler";
-        showNotification("Fehler: " + msg, "error");
-        startBtn.disabled = false;
-        startBtn.textContent = originalText;
-      }
-    } catch (err) {
-      showNotification("Server nicht erreichbar – läuft server.py?", "error");
-      startBtn.disabled = false;
-      startBtn.textContent = originalText;
-    }
-  });
+ if (res.ok && data.status === "ok") {
+ showNotification("Dashboard started successfully!", "success");
+ startBtn.textContent = "Dashboard is running";
+ setTimeout(() => {
+ startBtn.disabled = false;
+ startBtn.textContent = originalText;
+ }, 4000);
+ } else {
+ const msg = data.error || "Unknown error";
+ showNotification("Error: " + msg, "error");
+ startBtn.disabled = false;
+ startBtn.textContent = originalText;
+ }
+ } catch (err) {
+ showNotification("Server not reachable - is server.py running?", "error");
+ startBtn.disabled = false;
+ startBtn.textContent = originalText;
+ }
+ });
 
-  function showNotification(message, type = "success") {
-    const el = document.getElementById("site-notification");
-    if (!el) { alert(message); return; }
-    const text = el.querySelector(".site-notification__text");
-    if (text) text.textContent = message;
-    el.classList.remove("success", "error", "visible");
-    el.classList.add(type, "visible");
-    setTimeout(() => el.classList.remove("visible"), 3500);
-  }
-}) 
+ function showNotification(message, type = "success") {
+ const el = document.getElementById("site-notification");
+ if (!el) { alert(message); return; }
+ const text = el.querySelector(".site-notification__text");
+ if (text) text.textContent = message;
+ el.classList.remove("success", "error", "visible");
+ el.classList.add(type, "visible");
+ setTimeout(() => el.classList.remove("visible"), 3500);
+ }
+})();
 
 function toggleMenu() {
-  const menu = document.getElementById("head");
-  console.log(menu);
-  menu.classList.toggle("open");
+ const menu = document.getElementById("head");
+ console.log(menu);
+ menu.classList.toggle("open");
 }

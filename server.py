@@ -21,8 +21,6 @@ GOOGLE_CREDENTIALS_FILE = os.environ.get(
 
 
 def _load_google_client_config():
-    """Load the Google OAuth client config from the JSON file downloaded
-    from Google Cloud Console (format: {"web": {...}})."""
     if not os.path.exists(GOOGLE_CREDENTIALS_FILE):
         return None
     with open(GOOGLE_CREDENTIALS_FILE, "r") as f:
@@ -49,13 +47,12 @@ CMC_API_KEY = os.environ.get("CMC_API_KEY")
 
 SETTINGS_FILE = "settings.json"
 
-_pending_oauth_states: dict[str, str] = {}
+_pending_oauth_states = {}
 
-_cmc_map_cache: dict = {"data": None, "fetched_at": 0}
-_CMC_MAP_CACHE_SECONDS = 60 * 60  # 1 hour
+_cmc_map_cache = {"data": None, "fetched_at": 0}
+_CMC_MAP_CACHE_SECONDS = 60 * 60
 
-# Track the running dashboard process to avoid launching it twice
-_dashboard_proc = None
+ _dashboard_proc = None
 
 
 def _get_cmc_map():
@@ -75,7 +72,7 @@ def _get_cmc_map():
     return data
 
 
-def _search_stocks(keywords: str):
+def _search_stocks(keywords):
     response = requests.get(
         "https://www.alphavantage.co/query",
         params={
@@ -98,7 +95,7 @@ def _search_stocks(keywords: str):
     return results
 
 
-def _search_crypto(keywords: str):
+def _search_crypto(keywords):
     keywords_lower = keywords.lower()
     coins = _get_cmc_map()
     matches = []
@@ -112,12 +109,12 @@ def _search_crypto(keywords: str):
                 "name": name,
                 "id": coin.get("id"),
             })
-            if len(matches) >= 8:
-                break
+        if len(matches) >= 8:
+            break
     return matches
 
 
-def _build_google_flow(code_verifier: str | None = None):
+def _build_google_flow(code_verifier=None):
     if not _google_client_config:
         raise RuntimeError(f"Google credentials file '{GOOGLE_CREDENTIALS_FILE}' not found or invalid.")
     client_config = {"web": _google_client_config}
@@ -143,7 +140,7 @@ def _save_settings(data):
         json.dump(data, f, indent=2)
 
 
-def _store_google_tokens(credentials: Credentials):
+def _store_google_tokens(credentials):
     settings = _load_settings()
     settings["googleCalendar"] = {
         "connected": True,
@@ -235,10 +232,8 @@ def _validate_settings(data):
 
 
 def _launch_dashboard():
-    """Start dashboard.py as an independent subprocess."""
     global _dashboard_proc
 
-    # Don't launch a second instance if one is already running
     if _dashboard_proc is not None and _dashboard_proc.poll() is None:
         return True, "Dashboard is already running."
 
@@ -251,10 +246,8 @@ def _launch_dashboard():
     try:
         kwargs = {}
         if sys.platform == "win32":
-            # Open in a new console window on Windows
             kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
         else:
-            # Detach from the server process on Linux/macOS (Raspberry Pi)
             kwargs["start_new_session"] = True
 
         _dashboard_proc = subprocess.Popen(
@@ -268,7 +261,6 @@ def _launch_dashboard():
 
 
 class Handler(SimpleHTTPRequestHandler):
-
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -281,8 +273,6 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-
-        # ── NEW: launch dashboard.py ───────────────────────────────────
         if self.path == "/launch":
             ok, msg = _launch_dashboard()
             if ok:
@@ -290,7 +280,6 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 _write_json_response(self, 500, {"status": "error", "error": msg})
             return
-        # ──────────────────────────────────────────────────────────────
 
         if self.path == "/save":
             try:
@@ -462,7 +451,7 @@ class Handler(SimpleHTTPRequestHandler):
         else:
             super().do_GET()
 
-    def _redirect_to_settings(self, query: str) -> None:
+    def _redirect_to_settings(self, query):
         self.send_response(302)
         self.send_cors_headers()
         self.send_header("Location", f"/settings.html?{query}")

@@ -1,24 +1,3 @@
-"""
-dashboard.py — Python-Tkinter Dashboard
-Liest settings.json und zeigt die aktivierten Widgets mit den gespeicherten
-Theme-Farben an. Starte zuerst server.py, damit Kalender- und
-Gmail-Widgets funktionieren.
-
-Start:
-    python3 dashboard.py
-
-Abhängigkeiten (alle schon in requirements.txt):
-    pip install requests
-Optional für Wetter-Fallback ohne Koordinaten:
-    pip install requests
-
-Tastenkürzel:
-    ESC       → Vollbild beenden
-    F11       → Vollbild wieder aktivieren
-    R         → Daten manuell neu laden
-    Q         → Dashboard schließen
-"""
-
 import json
 import os
 import sys
@@ -26,7 +5,6 @@ import threading
 import time
 import tkinter as tk
 from datetime import datetime
-from tkinter import font as tkfont
 
 try:
     import requests
@@ -34,108 +12,105 @@ try:
 except ImportError:
     HAS_REQUESTS = False
 
-
 FONT_FAMILY = "Orbitron"
 
-
 WEATHER_CODES = {
-    0:  ("Klarer Himmel",      "☀"),
-    1:  ("Überwiegend klar",   "🌤"),
-    2:  ("Teils bewölkt",      "⛅"),
-    3:  ("Bedeckt",            "☁"),
-    45: ("Nebel",              "🌫"),
-    48: ("Gefrierender Nebel", "🌫"),
-    51: ("Leichter Niesel",    "🌧"),
-    53: ("Mäßiger Niesel",     "🌧"),
-    55: ("Starker Niesel",     "🌧"),
-    61: ("Leichter Regen",     "🌧"),
-    63: ("Mäßiger Regen",      "🌧"),
-    65: ("Starker Regen",      "🌧"),
-    71: ("Leichter Schnee",    "❄"),
-    73: ("Mäßiger Schnee",     "❄"),
-    75: ("Starker Schnee",     "❄"),
-    77: ("Schneekörner",       "❄"),
-    80: ("Leichte Schauer",    "🌦"),
-    81: ("Mäßige Schauer",     "🌦"),
-    82: ("Heftige Schauer",    "⛈"),
-    85: ("Leichte Schneeschauer", "🌨"),
-    86: ("Starke Schneeschauer",  "🌨"),
-    95: ("Gewitter",           "⛈"),
-    96: ("Gewitter m. Hagel",  "⛈"),
-    99: ("Starkes Gewitter",   "⛈"),
+    0: ("Clear sky", "☀"),
+    1: ("Mainly clear", "🌤"),
+    2: ("Partly cloudy", "⛅"),
+    3: ("Overcast", "☁"),
+    45: ("Fog", "🌫"),
+    48: ("Depositing rime fog", "🌫"),
+    51: ("Light drizzle", "🌧"),
+    53: ("Moderate drizzle", "🌧"),
+    55: ("Dense drizzle", "🌧"),
+    61: ("Slight rain", "🌧"),
+    63: ("Moderate rain", "🌧"),
+    65: ("Heavy rain", "🌧"),
+    71: ("Slight snow", "❄"),
+    73: ("Moderate snow", "❄"),
+    75: ("Heavy snow", "❄"),
+    77: ("Snow grains", "❄"),
+    80: ("Slight rain showers", "🌦"),
+    81: ("Moderate rain showers", "🌦"),
+    82: ("Violent rain showers", "⛈"),
+    85: ("Slight snow showers", "🌨"),
+    86: ("Heavy snow showers", "🌨"),
+    95: ("Thunderstorm", "⛈"),
+    96: ("Thunderstorm with hail", "⛈"),
+    99: ("Severe thunderstorm", "⛈"),
 }
-
 
 THEMES = {
     "default": {
-        "bg":         "#0d0d1a",
-        "widget_bg":  "#16162a",
-        "accent":     "#00d4ff",
-        "text":       "#e0e0ff",
-        "border":     "#2a2a50",
-        "muted":      "#6666aa",
-        "positive":   "#00ff88",
-        "negative":   "#ff4466",
+        "bg": "#0d0d1a",
+        "widget_bg": "#16162a",
+        "accent": "#00d4ff",
+        "text": "#e0e0ff",
+        "border": "#2a2a50",
+        "muted": "#6666aa",
+        "positive": "#00ff88",
+        "negative": "#ff4466",
     },
     "ocean": {
-        "bg":         "#080e1a",
-        "widget_bg":  "#0f1e30",
-        "accent":     "#00b4d8",
-        "text":       "#caf0f8",
-        "border":     "#1a3050",
-        "muted":      "#5588aa",
-        "positive":   "#00e5b0",
-        "negative":   "#ff5555",
+        "bg": "#080e1a",
+        "widget_bg": "#0f1e30",
+        "accent": "#00b4d8",
+        "text": "#caf0f8",
+        "border": "#1a3050",
+        "muted": "#5588aa",
+        "positive": "#00e5b0",
+        "negative": "#ff5555",
     },
     "forest": {
-        "bg":         "#080f08",
-        "widget_bg":  "#0f1e12",
-        "accent":     "#52b788",
-        "text":       "#d8f3dc",
-        "border":     "#1e3d25",
-        "muted":      "#558866",
-        "positive":   "#74c69d",
-        "negative":   "#ff6b6b",
+        "bg": "#080f08",
+        "widget_bg": "#0f1e12",
+        "accent": "#52b788",
+        "text": "#d8f3dc",
+        "border": "#1e3d25",
+        "muted": "#558866",
+        "positive": "#74c69d",
+        "negative": "#ff6b6b",
     },
     "sunset": {
-        "bg":         "#180800",
-        "widget_bg":  "#261200",
-        "accent":     "#ff7b35",
-        "text":       "#ffe8d6",
-        "border":     "#552200",
-        "muted":      "#aa6644",
-        "positive":   "#ffbb44",
-        "negative":   "#ff3333",
+        "bg": "#180800",
+        "widget_bg": "#261200",
+        "accent": "#ff7b35",
+        "text": "#ffe8d6",
+        "border": "#552200",
+        "muted": "#aa6644",
+        "positive": "#ffbb44",
+        "negative": "#ff3333",
     },
     "cyberpunk": {
-        "bg":         "#080010",
-        "widget_bg":  "#10001e",
-        "accent":     "#ff00ff",
-        "text":       "#00ffff",
-        "border":     "#3a0060",
-        "muted":      "#882288",
-        "positive":   "#00ff88",
-        "negative":   "#ff2244",
+        "bg": "#080010",
+        "widget_bg": "#10001e",
+        "accent": "#ff00ff",
+        "text": "#00ffff",
+        "border": "#3a0060",
+        "muted": "#882288",
+        "positive": "#00ff88",
+        "negative": "#ff2244",
     },
     "ice": {
-        "bg":         "#080816",
-        "widget_bg":  "#12182a",
-        "accent":     "#90caf9",
-        "text":       "#e8f4ff",
-        "border":     "#1e2e48",
-        "muted":      "#4466aa",
-        "positive":   "#66ddff",
-        "negative":   "#ff6688",
+        "bg": "#080816",
+        "widget_bg": "#12182a",
+        "accent": "#90caf9",
+        "text": "#e8f4ff",
+        "border": "#1e2e48",
+        "muted": "#4466aa",
+        "positive": "#66ddff",
+        "negative": "#ff6688",
     },
     "midnight": {
-        "bg":         "#030008",
-        "widget_bg":  "#0a0018",
-        "accent":     "#9b59b6",
-        "text":       "#dda0ff",
-        "border":     "#25004a",
-        "muted":      "#6a308a",
-        "positive":   "#a855f7",
-        "negative":   "#ff4488",
+        "bg": "#030008",
+        "widget_bg": "#0a0018",
+        "accent": "#9b59b6",
+        "text": "#dda0ff",
+        "border": "#25004a",
+        "muted": "#6a308a",
+        "positive": "#a855f7",
+        "negative": "#ff4488",
     },
 }
 
@@ -151,21 +126,18 @@ WEBSITE_THEME = {
 }
 
 STAR_MAP = {
-    "weather-widget-star":      "weather",
+    "weather-widget-star": "weather",
     "notifications-widget-star": "notifications",
-    "date-time-widget-star":    "dateTime",
-    "countdown-widget-star":    "countdown",
-    "calendar-widget-star":     "calendar",
+    "date-time-widget-star": "dateTime",
+    "countdown-widget-star": "countdown",
+    "calendar-widget-star": "calendar",
     "stock-crypto-widget-star": "stockCrypto",
 }
 
 SERVER_URL = "http://localhost:8000"
 
 
-
-
 def load_settings() -> dict:
-    """Lädt settings.json aus dem gleichen Verzeichnis wie dashboard.py."""
     here = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(here, "settings.json")
     if os.path.exists(path):
@@ -173,16 +145,11 @@ def load_settings() -> dict:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"[dashboard] settings.json Ladefehler: {e}")
+            print(f"[dashboard] settings.json load error: {e}")
     return {}
 
 
 def extract_colors(settings: dict) -> dict:
-    """
-    Liest Farbwerte aus settings.json.
-    Unterstützt: theme-Name, primaryColor / accentColor / customColor / backgroundColor.
-    Fällt auf das Default-Theme zurück, wenn keine Farben gesetzt sind.
-    """
     theme_name = settings.get("theme", "default")
     theme_mode = settings.get("themeMode")
 
@@ -207,14 +174,14 @@ def extract_colors(settings: dict) -> dict:
             settings.get("backgroundColor")
             or settings.get("bgColor")
         ),
-        "text":   settings.get("textColor"),
+        "text": settings.get("textColor"),
         "widget_bg": (
             settings.get("widgetBgColor")
             or settings.get("cardColor")
             or settings.get("cardBgColor")
         ),
         "border": settings.get("borderColor"),
-        "muted":  settings.get("secondaryTextColor") or settings.get("mutedColor"),
+        "muted": settings.get("secondaryTextColor") or settings.get("mutedColor"),
     }
     for key, val in overrides.items():
         if val and isinstance(val, str) and val.startswith("#"):
@@ -230,16 +197,14 @@ def run_in_thread(func, *args, daemon=True):
 
 
 class BaseWidget:
-    """Jedes Widget erbt hiervon und implementiert build() und fetch_data()."""
-
-    REFRESH_INTERVAL = 60  
+    REFRESH_INTERVAL = 60
 
     def __init__(self, parent: tk.Frame, colors: dict, big: bool = False, settings: dict = None):
-        self.parent   = parent
-        self.colors   = colors
-        self.big      = big
+        self.parent = parent
+        self.colors = colors
+        self.big = big
         self.settings = settings or {}
-        self._alive   = True
+        self._alive = True
 
         self.frame = tk.Frame(
             parent,
@@ -255,13 +220,12 @@ class BaseWidget:
         self.build()
         self._schedule_refresh()
 
-    
     def header(self, icon: str, title: str):
         h = tk.Frame(self.inner, bg=self.colors["widget_bg"])
         h.pack(fill="x", pady=(0, 6))
         tk.Label(
             h,
-            text=f"{icon}  {title}",
+            text=f"{icon} {title}",
             font=(FONT_FAMILY, 10, "bold"),
             bg=self.colors["widget_bg"],
             fg=self.colors["accent"],
@@ -294,10 +258,10 @@ class BaseWidget:
         return lbl
 
     def build(self):
-        """Erstellt das Widget-Layout. Muss überschrieben werden."""
+        pass
 
     def fetch_data(self):
-        """Holt Daten und aktualisiert Labels. Läuft im Hintergrund-Thread."""
+        pass
 
     def _schedule_refresh(self):
         if not HAS_REQUESTS:
@@ -318,13 +282,13 @@ class BaseWidget:
 
 
 class DateTimeWidget(BaseWidget):
-    REFRESH_INTERVAL = 999999  
+    REFRESH_INTERVAL = 999999
 
     def build(self):
         self.header("🕐", "DATE & TIME")
 
-        time_fs  = 60 if self.big else 32
-        date_fs  = 16 if self.big else 12
+        time_fs = 60 if self.big else 32
+        date_fs = 16 if self.big else 12
 
         self.lbl_time = tk.Label(
             self.inner, text="--:--:--",
@@ -360,10 +324,10 @@ class DateTimeWidget(BaseWidget):
 
 
 class WeatherWidget(BaseWidget):
-    REFRESH_INTERVAL = 600  
+    REFRESH_INTERVAL = 600
 
     def build(self):
-        self.header("🌤", "WETTER")
+        self.header("🌤", "WEATHER")
 
         temp_fs = 52 if self.big else 30
         self.lbl_temp = tk.Label(
@@ -374,7 +338,7 @@ class WeatherWidget(BaseWidget):
         self.lbl_temp.pack(pady=(6, 0))
 
         self.lbl_desc = tk.Label(
-            self.inner, text="Lade Wetterdaten …",
+            self.inner, text="Loading weather data...",
             font=(FONT_FAMILY, 13 if self.big else 10),
             bg=self.colors["widget_bg"], fg=self.colors["accent"],
         )
@@ -407,7 +371,7 @@ class WeatherWidget(BaseWidget):
             r = requests.get(
                 "https://api.open-meteo.com/v1/forecast",
                 params={
-                    "latitude":  lat,
+                    "latitude": lat,
                     "longitude": lon,
                     "current": (
                         "temperature_2m,weathercode,"
@@ -421,12 +385,12 @@ class WeatherWidget(BaseWidget):
             r.raise_for_status()
             cur = r.json().get("current", {})
 
-            temp     = cur.get("temperature_2m", "--")
-            feels    = cur.get("apparent_temperature", "--")
-            code     = cur.get("weathercode", 0)
-            wind     = cur.get("windspeed_10m", "--")
+            temp = cur.get("temperature_2m", "--")
+            feels = cur.get("apparent_temperature", "--")
+            code = cur.get("weathercode", 0)
+            wind = cur.get("windspeed_10m", "--")
             humidity = cur.get("relative_humidity_2m", "--")
-            desc, icon = WEATHER_CODES.get(code, ("Unbekannt", "?"))
+            desc, icon = WEATHER_CODES.get(code, ("Unknown", "?"))
 
             self.lbl_temp.config(text=f"{icon} {temp}°C")
             self.lbl_desc.config(text=desc)
@@ -437,58 +401,57 @@ class WeatherWidget(BaseWidget):
                 )
                 self.lbl_details.config(
                     text=(
-                        f"Gefühlt {feels}°C  •  "
-                        f"💨 {wind} km/h  •  "
+                        f"Feels like {feels}°C • "
+                        f"💨 {wind} km/h • "
                         f"💧 {humidity}%"
                     )
                 )
         except Exception as exc:
-            self.lbl_desc.config(text=f"Fehler: {str(exc)[:40]}")
-
+            self.lbl_desc.config(text=f"Error: {str(exc)[:40]}")
 
 
 class CalendarWidget(BaseWidget):
-    REFRESH_INTERVAL = 300  
+    REFRESH_INTERVAL = 300
 
     def build(self):
-        self.header("📅", "KALENDER")
+        self.header("📅", "CALENDAR")
         self.list_frame = tk.Frame(self.inner, bg=self.colors["widget_bg"])
         self.list_frame.pack(fill="both", expand=True)
-        self._set_status("Kalender wird geladen …")
+        self._set_status("Loading calendar...")
 
     def fetch_data(self):
         if not HAS_REQUESTS:
-            self._set_status("requests nicht installiert")
+            self._set_status("requests not installed")
             return
         try:
             r = requests.get(f"{SERVER_URL}/calendar/events", timeout=6)
             if r.status_code == 401:
-                self._set_status("Google Kalender nicht verbunden.\nBitte in den Einstellungen verbinden.")
+                self._set_status("Google Calendar not connected.\nPlease connect in Settings.")
                 return
             if r.status_code != 200:
-                self._set_status(f"Serverfehler: {r.status_code}")
+                self._set_status(f"Server error: {r.status_code}")
                 return
             events = r.json().get("events", [])
             self._render_events(events)
         except requests.exceptions.ConnectionError:
-            self._set_status("Server nicht erreichbar.\n→ server.py starten")
+            self._set_status("Server not reachable.\n→ Start server.py")
         except Exception as exc:
-            self._set_status(f"Fehler: {str(exc)[:50]}")
+            self._set_status(f"Error: {str(exc)[:50]}")
 
     def _render_events(self, events):
         self._clear()
         max_ev = 6 if self.big else 3
         if not events:
-            self._set_status("Keine bevorstehenden Termine")
+            self._set_status("No upcoming events")
             return
         for ev in events[:max_ev]:
             start_raw = (ev.get("start") or {}).get("dateTime") or (ev.get("start") or {}).get("date", "")
             try:
                 dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
-                start_fmt = dt.strftime("%d.%m  %H:%M")
+                start_fmt = dt.strftime("%m-%d %H:%M")
             except Exception:
                 start_fmt = start_raw[:10]
-            summary = ev.get("summary", "Ohne Titel")[:35]
+            summary = ev.get("summary", "No title")[:35]
 
             row = tk.Frame(self.list_frame, bg=self.colors["widget_bg"])
             row.pack(fill="x", pady=2)
@@ -511,21 +474,21 @@ class CalendarWidget(BaseWidget):
 
 
 class StockCryptoWidget(BaseWidget):
-    REFRESH_INTERVAL = 120  
+    REFRESH_INTERVAL = 120
 
     def build(self):
-        sel  = self.settings.get("stockCryptoSelection") or {}
-        self._sym  = sel.get("symbol", "BTC")
+        sel = self.settings.get("stockCryptoSelection") or {}
+        self._sym = sel.get("symbol", "BTC")
         self._name = sel.get("name", "Bitcoin")
         self._type = sel.get("type", "crypto")
         self._cmc_id = sel.get("id")
 
         icon = "₿" if self._type == "crypto" else "📈"
-        self.header(icon, "KURS")
+        self.header(icon, "PRICE")
 
         self.lbl_name = tk.Label(
             self.inner,
-            text=f"{self._sym}  —  {self._name}",
+            text=f"{self._sym} — {self._name}",
             font=(FONT_FAMILY, 12 if self.big else 10, "bold"),
             bg=self.colors["widget_bg"], fg=self.colors["accent"],
         )
@@ -563,7 +526,7 @@ class StockCryptoWidget(BaseWidget):
             else:
                 self._fetch_stock()
         except Exception as exc:
-            self.lbl_price.config(text="Fehler")
+            self.lbl_price.config(text="Error")
             self.lbl_change.config(text=str(exc)[:40], fg=self.colors["muted"])
 
     def _fetch_crypto(self):
@@ -583,17 +546,17 @@ class StockCryptoWidget(BaseWidget):
 
         coin_data = data.get(sym_lower) or (list(data.values())[0] if data else {})
         if not coin_data:
-            self.lbl_price.config(text="Nicht gefunden")
+            self.lbl_price.config(text="Not found")
             return
 
-        price  = coin_data.get("usd", 0)
+        price = coin_data.get("usd", 0)
         change = coin_data.get("usd_24h_change", 0)
-        mcap   = coin_data.get("usd_market_cap", 0)
+        mcap = coin_data.get("usd_market_cap", 0)
 
         self.lbl_price.config(text=f"${price:,.2f}")
-        sign  = "+" if change >= 0 else ""
+        sign = "+" if change >= 0 else ""
         color = self.colors["positive"] if change >= 0 else self.colors["negative"]
-        self.lbl_change.config(text=f"{sign}{change:.2f}%  (24 h)", fg=color)
+        self.lbl_change.config(text=f"{sign}{change:.2f}% (24 h)", fg=color)
         if self.big and hasattr(self, "lbl_meta") and mcap:
             self.lbl_meta.config(text=f"Market Cap: ${mcap:,.0f}")
 
@@ -601,7 +564,7 @@ class StockCryptoWidget(BaseWidget):
         try:
             from dotenv import dotenv_values
             here = os.path.dirname(os.path.abspath(__file__))
-            env  = dotenv_values(os.path.join(here, ".env"))
+            env = dotenv_values(os.path.join(here, ".env"))
             api_key = env.get("ALPHA_VANTAGE_API_KEY")
         except ImportError:
             api_key = None
@@ -611,63 +574,63 @@ class StockCryptoWidget(BaseWidget):
                 "https://www.alphavantage.co/query",
                 params={
                     "function": "GLOBAL_QUOTE",
-                    "symbol":   self._sym,
-                    "apikey":   api_key,
+                    "symbol": self._sym,
+                    "apikey": api_key,
                 },
                 timeout=10,
             )
             r.raise_for_status()
             q = r.json().get("Global Quote", {})
-            price  = float(q.get("05. price", 0) or 0)
+            price = float(q.get("05. price", 0) or 0)
             change = float(q.get("10. change percent", "0%").replace("%", "") or 0)
             self.lbl_price.config(text=f"${price:,.2f}")
-            sign  = "+" if change >= 0 else ""
+            sign = "+" if change >= 0 else ""
             color = self.colors["positive"] if change >= 0 else self.colors["negative"]
             self.lbl_change.config(text=f"{sign}{change:.2f}%", fg=color)
         else:
             self.lbl_price.config(text=f"{self._sym}")
             self.lbl_change.config(
-                text="Alpha Vantage Key fehlt in .env\n→ browser öffnen",
+                text="Alpha Vantage Key missing in .env\n→ Open in browser",
                 fg=self.colors["muted"],
             )
 
 
 class NotificationsWidget(BaseWidget):
-    REFRESH_INTERVAL = 180  
+    REFRESH_INTERVAL = 180
 
     def build(self):
-        self.header("📬", "NACHRICHTEN")
+        self.header("📬", "MESSAGES")
         self.list_frame = tk.Frame(self.inner, bg=self.colors["widget_bg"])
         self.list_frame.pack(fill="both", expand=True)
-        self._set_status("Nachrichten werden geladen …")
+        self._set_status("Loading messages...")
 
     def fetch_data(self):
         if not HAS_REQUESTS:
-            self._set_status("requests nicht installiert")
+            self._set_status("requests not installed")
             return
         try:
             r = requests.get(f"{SERVER_URL}/notifications/messages", timeout=8)
             if r.status_code == 401:
-                self._set_status("Gmail nicht verbunden.\nBitte in den Einstellungen verbinden.")
+                self._set_status("Gmail not connected.\nPlease connect in Settings.")
                 return
             if r.status_code == 403:
-                self._set_status("Keine Gmail-Berechtigung.\nBitte Konto neu verbinden.")
+                self._set_status("No Gmail permission.\nPlease reconnect your account.")
                 return
             if r.status_code != 200:
-                self._set_status(f"Serverfehler: {r.status_code}")
+                self._set_status(f"Server error: {r.status_code}")
                 return
             messages = r.json().get("messages", [])
             self._render_messages(messages)
         except requests.exceptions.ConnectionError:
-            self._set_status("Server nicht erreichbar.\n→ server.py starten")
+            self._set_status("Server not reachable.\n→ Start server.py")
         except Exception as exc:
-            self._set_status(f"Fehler: {str(exc)[:50]}")
+            self._set_status(f"Error: {str(exc)[:50]}")
 
     def _render_messages(self, messages):
         self._clear()
         max_msg = 6 if self.big else 3
         if not messages:
-            self._set_status("Keine neuen Nachrichten")
+            self._set_status("No new messages")
             return
         for msg in messages[:max_msg]:
             is_unread = msg.get("unread", False)
@@ -683,7 +646,7 @@ class NotificationsWidget(BaseWidget):
             info.pack(side="left", fill="x", expand=True)
 
             from_str = (msg.get("from") or "")[:28]
-            subj_str = (msg.get("subject") or "(kein Betreff)")[:38]
+            subj_str = (msg.get("subject") or "(no subject)")[:38]
 
             tk.Label(info, text=from_str, font=(FONT_FAMILY, 9, "bold"),
                     bg=self.colors["widget_bg"],
@@ -711,9 +674,9 @@ class CountdownWidget(BaseWidget):
         self.header("⏳", "COUNTDOWN")
 
         cd = self.settings.get("countdown") or {}
-        self._label_text  = cd.get("label") or cd.get("name") or "Event"
+        self._label_text = cd.get("label") or cd.get("name") or "Event"
         self._target_date = cd.get("date") or cd.get("targetDate") or ""
-        
+
         if not self._target_date:
             self._target_date = (
                 self.settings.get("countdownDate")
@@ -736,7 +699,7 @@ class CountdownWidget(BaseWidget):
 
         cd_fs = 32 if self.big else 20
         self.lbl_cd = tk.Label(
-            self.inner, text="-- Tage",
+            self.inner, text="-- days",
             font=(FONT_FAMILY, cd_fs, "bold"),
             bg=self.colors["widget_bg"], fg=self.colors["text"],
         )
@@ -750,8 +713,8 @@ class CountdownWidget(BaseWidget):
         self.lbl_date.pack()
 
         if not self._target_date:
-            self.lbl_cd.config(text="Kein Datum")
-            self.lbl_date.config(text="Datum in den Einstellungen setzen")
+            self.lbl_cd.config(text="No date set")
+            self.lbl_date.config(text="Set date in Settings")
         else:
             self._tick()
 
@@ -759,39 +722,39 @@ class CountdownWidget(BaseWidget):
         try:
             target = datetime.fromisoformat(self._target_date)
         except ValueError:
-            self.lbl_cd.config(text="Ungültiges Datum")
+            self.lbl_cd.config(text="Invalid date")
             return
 
-        now  = datetime.now()
+        now = datetime.now()
         diff = target - now
 
         if diff.total_seconds() <= 0:
-            self.lbl_cd.config(text="🎉 Erreicht!")
-            self.lbl_date.config(text=target.strftime("%d.%m.%Y"))
+            self.lbl_cd.config(text="🎉 Reached!")
+            self.lbl_date.config(text=target.strftime("%m-%d %Y"))
             return
 
         total_secs = int(diff.total_seconds())
-        days  = total_secs // 86400
+        days = total_secs // 86400
         hours = (total_secs % 86400) // 3600
-        mins  = (total_secs % 3600)  // 60
-        secs  = total_secs % 60
+        mins = (total_secs % 3600) // 60
+        secs = total_secs % 60
 
         if days > 0:
-            self.lbl_cd.config(text=f"{days}T  {hours:02d}:{mins:02d}:{secs:02d}")
+            self.lbl_cd.config(text=f"{days}D {hours:02d}:{mins:02d}:{secs:02d}")
         else:
             self.lbl_cd.config(text=f"{hours:02d}:{mins:02d}:{secs:02d}")
 
-        self.lbl_date.config(text=target.strftime("Ziel: %d.%m.%Y  %H:%M"))
+        self.lbl_date.config(text=f"Target: {target.strftime('%m-%d %Y %H:%M')}")
         self.inner.after(1000, self._tick)
 
 
 WIDGET_CLASSES = {
-    "dateTime":    DateTimeWidget,
-    "weather":     WeatherWidget,
-    "calendar":    CalendarWidget,
+    "dateTime": DateTimeWidget,
+    "weather": WeatherWidget,
+    "calendar": CalendarWidget,
     "stockCrypto": StockCryptoWidget,
     "notifications": NotificationsWidget,
-    "countdown":   CountdownWidget,
+    "countdown": CountdownWidget,
 }
 
 
@@ -807,7 +770,7 @@ class Dashboard(tk.Tk):
     def __init__(self):
         super().__init__()
         self.settings = load_settings()
-        self.colors   = extract_colors(self.settings)
+        self.colors = extract_colors(self.settings)
 
         self._setup_window()
         self._build_ui()
@@ -818,20 +781,19 @@ class Dashboard(tk.Tk):
         self.attributes("-fullscreen", True)
 
         self.bind("<Escape>", lambda e: self.attributes("-fullscreen", False))
-        self.bind("<F11>",    lambda e: self.attributes("-fullscreen", True))
-        self.bind("<q>",      lambda e: self.destroy())
-        self.bind("<Q>",      lambda e: self.destroy())
-        self.bind("<r>",      lambda e: self._soft_reload())
-        self.bind("<R>",      lambda e: self._soft_reload())
+        self.bind("<F11>", lambda e: self.attributes("-fullscreen", True))
+        self.bind("<q>", lambda e: self.destroy())
+        self.bind("<Q>", lambda e: self.destroy())
+        self.bind("<r>", lambda e: self._soft_reload())
+        self.bind("<R>", lambda e: self._soft_reload())
 
     def _soft_reload(self):
-        """Neustart des Dashboards mit frisch geladenen Einstellungen."""
         self.destroy()
         python = sys.executable
         os.execl(python, python, *sys.argv)
 
     def _build_ui(self):
-        c          = self.colors
+        c = self.colors
         widgets_en = self.settings.get("widgets") or {}
         starred_id = self.settings.get("starredWidget", "")
         starred_key = STAR_MAP.get(starred_id, "dateTime")
@@ -873,7 +835,7 @@ class Dashboard(tk.Tk):
 
         tk.Label(
             hdr,
-            text="▣  DASHBOARD",
+            text="▣ DASHBOARD",
             font=(FONT_FAMILY, 20, "bold"),
             bg=c["bg"], fg=c["accent"],
         ).pack(side="left")
@@ -899,7 +861,7 @@ class Dashboard(tk.Tk):
 
         tk.Label(
             footer,
-            text="ESC Vollbild verlassen   F11 Vollbild   R Neu laden   Q Beenden",
+            text="ESC Exit fullscreen F11 Fullscreen R Reload Q Quit",
             font=(FONT_FAMILY, 9),
             bg=c["bg"], fg=c["muted"],
         ).pack(side="left")
@@ -916,15 +878,16 @@ class Dashboard(tk.Tk):
 
 if __name__ == "__main__":
     if not HAS_REQUESTS:
-        print("[WARNUNG] 'requests' nicht installiert. Live-Daten werden nicht geladen.")
-        print("          Installieren: pip install requests")
+        print("[WARNING] 'requests' not installed. Live data will not be loaded.")
+        print(" Install: pip install requests")
 
     settings = load_settings()
     if not settings:
         print("[INFO] No settings.json found or failed to load. Using default settings.")
-        print("       Start server.py and configure it first at")
-        print("       http://localhost:8000, before you start dashboard.py.")
-        print("       The dashboard will run with default settings regardless.")
+        print(" Start server.py and configure it first at")
+        print(" http://localhost:8000, before you start dashboard.py.")
+        print(" The dashboard will run with default settings regardless.")
 
     app = Dashboard()
     app.mainloop()
+
