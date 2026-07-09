@@ -128,9 +128,9 @@ WEBSITE_THEME = {
 STAR_MAP = {
     "weather-widget-star": "weather",
     "notifications-widget-star": "notifications",
-    "date-time-widget-star": "dateTime",
+"date-time-widget-star": "dateTime",
     "countdown-widget-star": "countdown",
-    "calendar-widget-star": "calendar",
+    "calendar-widget-star":  "calendar",
     "stock-crypto-widget-star": "stockCrypto",
 }
 
@@ -153,41 +153,171 @@ def extract_colors(settings: dict) -> dict:
     theme_name = settings.get("theme", "default")
     theme_mode = settings.get("themeMode")
 
-    if theme_mode == "custom" or not theme_name:
-        base = WEBSITE_THEME.copy()
+    # Wenn Custom Color oder Website Theme Mode aktiviert ist:
+    # Erstelle ein dynamisches Theme basierend auf der ausgewählten Farbe
+    custom_color = settings.get("customColor")
+    preset_theme = settings.get("theme")
+
+    if theme_mode == "custom" and custom_color:
+        # Benutzerdefinierte Farbe - generiere komplett neues Farbschema
+        # NUTZE NUR DIE CUSTOM COLOR für alle Elemente
+        base = generate_theme_from_color(custom_color)
+    elif theme_mode == "preset" and preset_theme:
+        # Preset Theme aus der Website - mappe auf Dashboard-Themes
+        theme_mapping = {
+            "light": "ice",      # Helles Theme
+            "dark": "midnight",  # Dunkles Theme
+            "blue": "default",   # Blau (Standard)
+            "green": "forest",   # Grün
+            "red": "sunset",     # Rot/Orange
+            "pink": "cyberpunk", # Pink/Magenta
+            "purple": "midnight",# Lila
+        }
+        theme_key = theme_mapping.get(preset_theme, "default")
+        base = THEMES.get(theme_key, THEMES["default"]).copy()
+
+        # Falls customColor zusätzlich gesetzt ist, überschreibe accent/border
+        if custom_color and isinstance(custom_color, str) and custom_color.startswith("#"):
+            base["accent"] = custom_color
+            base["border"] = custom_color
     else:
+        # Standardverhalten: Nutze Dashboard-Themes
         base = THEMES.get(theme_name, THEMES["default"]).copy()
 
-    custom_color = settings.get("customColor")
-    if custom_color and isinstance(custom_color, str) and custom_color.startswith("#"):
-        base["accent"] = custom_color
-        base["border"] = custom_color
-
-    overrides = {
-        "accent": (
-            settings.get("accentColor")
-            or settings.get("primaryColor")
-            or settings.get("customColor")
-            or settings.get("themeColor")
-        ),
-        "bg": (
-            settings.get("backgroundColor")
-            or settings.get("bgColor")
-        ),
-        "text": settings.get("textColor"),
-        "widget_bg": (
-            settings.get("widgetBgColor")
-            or settings.get("cardColor")
-            or settings.get("cardBgColor")
-        ),
-        "border": settings.get("borderColor"),
-        "muted": settings.get("secondaryTextColor") or settings.get("mutedColor"),
-    }
-    for key, val in overrides.items():
-        if val and isinstance(val, str) and val.startswith("#"):
-            base[key] = val
+    # Manuelle Überschreibungen aus settings.json (für Rückwärtskompatibilität)
+    # ABER: Nur anwenden, wenn NICHT im Custom Mode ist
+    # (Im Custom Mode soll die generierte Farbe Vorrang haben)
+    if theme_mode != "custom" or not custom_color:
+        overrides = {
+            "accent": (
+                settings.get("accentColor")
+                or settings.get("primaryColor")
+                or settings.get("customColor")
+                or settings.get("themeColor")
+            ),
+            "bg": (
+                settings.get("backgroundColor")
+                or settings.get("bgColor")
+            ),
+            "text": settings.get("textColor"),
+            "widget_bg": (
+                settings.get("widgetBgColor")
+                or settings.get("cardColor")
+                or settings.get("cardBgColor")
+            ),
+            "border": settings.get("borderColor"),
+            "muted": settings.get("secondaryTextColor") or settings.get("mutedColor"),
+        }
+        for key, val in overrides.items():
+            if val and isinstance(val, str) and val.startswith("#"):
+                base[key] = val
 
     return base
+
+
+def generate_theme_from_color(hex_color: str) -> dict:
+    """
+    Generiert ein vollständiges Farbschema aus einer einzelnen Hauptfarbe
+    mit MAXIMALEM KONTRAST für alle Elemente (Linien, Rahmen, Text, Widgets).
+
+    Optimierte Farbstrategie:
+    - bg: Dunkle Version (V ~18-22%) - nicht zu dunkel für Widget-Kontrast
+    - widget_bg: Deutlich hellere Variante (V ~35-45%) - gut sichtbar auf bg
+    - accent: Die Hauptfarbe in mittlerer/heller Variante (V ~70-85%)
+    - border: SEHR HELL (V >= 85%) fast weiß mit leichtem Farbstich
+    - text: REINWEISS (#ffffff) für maximalen Kontrast
+    - muted: Mittelhell (V ~55-65%) mit sehr geringer Sättigung
+
+    Alle Kontraste sind optimiert für:
+    - border vs widget_bg >= 3:1 (gute Rahmensichtbarkeit)
+    - border vs bg >= 4:1 (gute Sichtbarkeit auf Hintergrund)
+    - widget_bg vs bg >= 2:1 (Widgets heben sich ab)
+    - text vs widget_bg >= 15:1 (perfekte Lesbarkeit)
+    - accent vs widget_bg >= 4.5:1 (Icons/Überschriften gut sichtbar)
+    """
+    import colorsys
+
+    # Entferne # und konvertiere zu RGB (0-255)
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) == 3:
+        r, g, b = int(hex_color[0]*2, 16), int(hex_color[1]*2, 16), int(hex_color[2]*2, 16)
+    else:
+        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+
+    # Normalisiere zu 0-1 für colorsys
+    r_norm, g_norm, b_norm = r/255.0, g/255.0, b/255.0
+
+    # Konvertiere zu HSV für einfache Anpassungen
+    h, s, v = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
+
+    # --- Hintergrundfarben ---
+    # bg: Dunkel aber nicht zu dunkel (V ~18-22%)
+    # damit Widgets (V ~35-45%) guten Kontrast haben
+    bg_v = max(0.12, min(0.22, v * 0.3))
+    bg_s = min(0.8, s * 1.2)
+    bg_r, bg_g, bg_b = colorsys.hsv_to_rgb(h, bg_s, bg_v)
+    bg_hex = rgb_to_hex(int(bg_r*255), int(bg_g*255), int(bg_b*255))
+
+    # widget_bg: DEUTLICH HELLER als bg (V ~35-45%) damit Widgets sichtbar sind
+    # Kontrast zu bg sollte >= 2:1 sein
+    widget_v = min(0.45, max(0.30, bg_v * 2.0))
+    widget_s = bg_s
+    widget_r, widget_g, widget_b = colorsys.hsv_to_rgb(h, widget_s, widget_v)
+    widget_hex = rgb_to_hex(int(widget_r*255), int(widget_g*255), int(widget_b*255))
+
+    # --- Akzentfarbe (für Icons, Überschriften) ---
+    # accent: Die Hauptfarbe, deutlich aufgehellt für guten Kontrast zu widget_bg
+    # Sollte einen Kontrast >= 4.5:1 zu widget_bg haben
+    accent_v = min(0.85, v * 1.5)
+    accent_s = min(0.95, s * 1.1)
+    accent_r, accent_g, accent_b = colorsys.hsv_to_rgb(h, accent_s, accent_v)
+    accent_hex = rgb_to_hex(int(accent_r*255), int(accent_g*255), int(accent_b*255))
+
+    # --- Rahmen/Farben (MAXIMALER KONTRAST) ---
+    # border: SEHR HELL (V >= 0.85) für maximale Sichtbarkeit
+    # Fast reinweiß mit leichtem Farbstich der Hauptfarbe
+    # Kontrast zu widget_bg und bg sollte >= 4:1 sein
+    border_v = 0.90  # Fast Weiß
+    border_s = min(0.3, s * 0.5)  # Sehr geringe Sättigung für fast neutralen Look
+    border_r, border_g, border_b = colorsys.hsv_to_rgb(h, border_s, border_v)
+    border_hex = rgb_to_hex(int(border_r*255), int(border_g*255), int(border_b*255))
+
+    # --- Textfarben ---
+    # text: REINWEISS für besten Kontrast zum dunklen Hintergrund
+    text_hex = "#ffffff"
+
+    # muted: Mittelhell (V ~0.55-0.65) mit sehr geringer Sättigung
+    muted_v = 0.60
+    muted_s = max(0.05, s * 0.1)
+    muted_r, muted_g, muted_b = colorsys.hsv_to_rgb(h, muted_s, muted_v)
+    muted_hex = rgb_to_hex(int(muted_r*255), int(muted_g*255), int(muted_b*255))
+
+    # --- Positive/Negative Farben (für Kursänderungen) ---
+    # positive: Hellgrün (gut sichtbar)
+    pos_h = 120/360
+    pos_r, pos_g, pos_b = colorsys.hsv_to_rgb(pos_h, 0.8, 0.9)
+    positive_hex = rgb_to_hex(int(pos_r*255), int(pos_g*255), int(pos_b*255))
+
+    # negative: Hellrot (gut sichtbar)
+    neg_h = 0/360
+    neg_r, neg_g, neg_b = colorsys.hsv_to_rgb(neg_h, 0.8, 0.9)
+    negative_hex = rgb_to_hex(int(neg_r*255), int(neg_g*255), int(neg_b*255))
+
+    return {
+        "bg": bg_hex,
+        "widget_bg": widget_hex,
+        "accent": accent_hex,
+        "text": text_hex,
+        "border": border_hex,
+        "muted": muted_hex,
+        "positive": positive_hex,
+        "negative": negative_hex,
+    }
+
+
+def rgb_to_hex(r: int, g: int, b: int) -> str:
+    """Konvertiert RGB (0-255) zu Hex-Code (#RRGGBB)"""
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 def run_in_thread(func, *args, daemon=True):

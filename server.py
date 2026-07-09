@@ -52,7 +52,7 @@ _pending_oauth_states = {}
 _cmc_map_cache = {"data": None, "fetched_at": 0}
 _CMC_MAP_CACHE_SECONDS = 60 * 60
 
- _dashboard_proc = None
+_dashboard_proc = None
 
 
 def _get_cmc_map():
