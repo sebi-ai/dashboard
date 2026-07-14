@@ -295,7 +295,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return
 
             existing = _load_settings()
-            if "googleCalendar" in existing and "googleCalendar" not in data:
+            if "googleCalendar" in existing:
                 data["googleCalendar"] = existing["googleCalendar"]
 
             _save_settings(data)

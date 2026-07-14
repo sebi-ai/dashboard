@@ -320,10 +320,182 @@ def rgb_to_hex(r: int, g: int, b: int) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def hex_to_luminance(hex_color: str) -> float:
+    """Berechnet die relative Luminanz einer Farbe (0-1) nach WCAG"""
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) == 3:
+        r, g, b = int(hex_color[0]*2, 16), int(hex_color[1]*2, 16), int(hex_color[2]*2, 16)
+    else:
+        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+
+    # Normalisiere zu 0-1
+    r_norm = r / 255.0
+    g_norm = g / 255.0
+    b_norm = b / 255.0
+
+    # Gamma-Korrektur für sRGB
+    r_srgb = r_norm / 12.92 if r_norm <= 0.03928 else ((r_norm + 0.055) / 1.055) ** 2.4
+    g_srgb = g_norm / 12.92 if g_norm <= 0.03928 else ((g_norm + 0.055) / 1.055) ** 2.4
+    b_srgb = b_norm / 12.92 if b_norm <= 0.03928 else ((b_norm + 0.055) / 1.055) ** 2.4
+
+    # Luminanz berechnen (WCAG Formel)
+    luminance = 0.2126 * r_srgb + 0.7152 * g_srgb + 0.0722 * b_srgb
+    return luminance
+
+
+def get_contrast_ratio(color1: str, color2: str) -> float:
+    """Berechnet das Kontrastverhältnis zwischen zwei Farben (WCAG)"""
+    l1 = hex_to_luminance(color1)
+    l2 = hex_to_luminance(color2)
+
+    # Die hellere Farbe durch die dunklere teilen
+    lighter = max(l1, l2)
+    darker = min(l1, l2)
+
+    if darker == 0:
+        return float('inf')
+
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def get_contrast_aware_text_color(bg_color: str, preferred_color: str) -> str:
+    """
+    Gibt die Textfarbe zurück, die guten Kontrast zum Hintergrund hat.
+    Bevorzugt die preferred_color, aber wenn der Kontrast zu schlecht ist,
+    verwendet es stattdessen weiß oder schwarz.
+
+    Mindestkontrast: 4.5:1 (WCAG AA für normale Texte)
+    """
+    # Bevorzugte Farbe testen
+    ratio_preferred = get_contrast_ratio(preferred_color, bg_color)
+
+    # Mindestkontrast für gute Lesbarkeit (WCAG AA)
+    MIN_CONTRAST = 4.5
+
+    if ratio_preferred >= MIN_CONTRAST:
+        return preferred_color
+
+    # versuche reinweiss
+    ratio_white = get_contrast_ratio("#ffffff", bg_color)
+    if ratio_white >= MIN_CONTRAST:
+        return "#ffffff"
+
+    # versuche schwarz
+    ratio_black = get_contrast_ratio("#000000", bg_color)
+    if ratio_black >= MIN_CONTRAST:
+        return "#000000"
+
+    # wenn beides zu schlecht ist, nimm die farbe mit dem besseren kontrast
+    if ratio_white >= ratio_black:
+        return "#ffffff"
+    else:
+        return "#000000"
+
+
 def run_in_thread(func, *args, daemon=True):
     t = threading.Thread(target=func, args=args, daemon=daemon)
     t.start()
     return t
+
+
+class RoundedBackground(tk.Canvas):
+    """A canvas that draws a rounded rectangle background behind its parent frame."""
+    def __init__(self, parent, bg, border_color, radius=15, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.bg = bg
+        self.border_color = border_color
+        self.radius = radius
+        self.configure(highlightthickness=0)
+        self.bind("<Configure>", self.on_configure)
+        # Make sure this canvas is below the content frame.
+        # NOTE: tk.Canvas aliases `lower` to `tag_lower` (a canvas-item
+        # operation that needs a tag/id), so we must invoke the widget
+        # stacking-order lower via the raw tk command instead.
+        self.tk.call("lower", self._w)
+
+    def on_configure(self, event):
+        self.draw_rounded_rect()
+
+    def draw_rounded_rect(self):
+        self.delete("all")
+        width = self.winfo_width()
+        height = self.winfo_height()
+        radius = self.radius
+
+        if width <= 0 or height <= 0:
+            return
+
+        self.create_rounded_rectangle(
+            0, 0, width, height,
+            radius=radius,
+            fill=self.bg,
+            outline=self.border_color,
+            width=1
+        )
+
+    def create_rounded_rectangle(self, x1, y1, x2, y2, radius, **kwargs):
+        """Create a rounded rectangle on the canvas."""
+        fill = kwargs.pop('fill', None)
+        outline = kwargs.pop('outline', None)
+        linewidth = kwargs.pop('width', 1)
+
+        # Clamp radius to half the smaller dimension
+        diameter = 2 * radius
+        if x2 - x1 < diameter:
+            radius = (x2 - x1) // 2
+        if y2 - y1 < diameter:
+            radius = (y2 - y1) // 2
+
+        # Draw the filled rounded rectangle using bezier curves
+        if fill:
+            self._draw_rounded_polygon(x1, y1, x2, y2, radius, fill=fill)
+
+        # Draw the border
+        if outline and linewidth > 0:
+            self._draw_rounded_border(x1, y1, x2, y2, radius, outline, linewidth)
+
+    def _draw_rounded_polygon(self, x1, y1, x2, y2, r, **kwargs):
+        """Draw the filled part of the rounded rectangle."""
+        points = [
+            x1 + r, y1,
+            x2 - r, y1,
+            x2, y1,
+            x2, y1 + r,
+            x2, y2 - r,
+            x2, y2,
+            x2 - r, y2,
+            x1 + r, y2,
+            x1, y2,
+            x1, y2 - r,
+            x1, y1 + r,
+            x1, y1
+        ]
+        self.create_polygon(points, **kwargs, smooth=True)
+
+    def _draw_rounded_border(self, x1, y1, x2, y2, r, color, width):
+        """Draw the border of the rounded rectangle using arcs and lines."""
+        d = 2 * r
+
+        # Top-left to top-right
+        self.create_line(x1 + r, y1, x2 - r, y1, fill=color, width=width)
+        # Top-right arc
+        self.create_arc(x2 - d, y1, x2, y1 + d, start=0, extent=90,
+                        outline=color, width=width, style=tk.ARC)
+        # Top-right to bottom-right
+        self.create_line(x2, y1 + r, x2, y2 - r, fill=color, width=width)
+        # Bottom-right arc
+        self.create_arc(x2 - d, y2 - d, x2, y2, start=270, extent=90,
+                        outline=color, width=width, style=tk.ARC)
+        # Bottom-right to bottom-left
+        self.create_line(x1 + r, y2, x2 - r, y2, fill=color, width=width)
+        # Bottom-left arc
+        self.create_arc(x1, y2 - d, x1 + d, y2, start=180, extent=90,
+                        outline=color, width=width, style=tk.ARC)
+        # Bottom-left to top-left
+        self.create_line(x1, y1 + r, x1, y2 - r, fill=color, width=width)
+        # Top-left arc
+        self.create_arc(x1, y1, x1 + d, y1 + d, start=90, extent=90,
+                        outline=color, width=width, style=tk.ARC)
 
 
 class BaseWidget:
@@ -336,15 +508,25 @@ class BaseWidget:
         self.settings = settings or {}
         self._alive = True
 
-        self.frame = tk.Frame(
-            parent,
-            bg=colors["widget_bg"],
-            highlightbackground=colors["border"],
-            highlightthickness=1,
-        )
-        self.frame.pack(fill="both", expand=big, padx=0, pady=(0, 10))
+        # Create a container frame
+        self.container_frame = tk.Frame(parent, bg=parent.cget("bg"))
+        self.container_frame.pack(fill="both", expand=big, padx=0, pady=(0, 10))
 
-        self.inner = tk.Frame(self.frame, bg=colors["widget_bg"])
+        # Create rounded background canvas (positioned first, then content on top)
+        self.bg_canvas = RoundedBackground(
+            self.container_frame,
+            bg=colors["widget_bg"],
+            border_color=colors["border"],
+            radius=30,
+        )
+        self.bg_canvas.pack(fill="both", expand=True)
+        # bg_canvas is a tk.Canvas, where `lower()` is aliased to the
+        # canvas-item `tag_lower` (needs a tag/id). Lower the *widget*
+        # in the stacking order via the raw tk command instead.
+        self.bg_canvas.tk.call("lower", self.bg_canvas._w)
+
+        # Content frame on top of the canvas
+        self.inner = tk.Frame(self.container_frame, bg=colors["widget_bg"])
         self.inner.pack(fill="both", expand=True, padx=14, pady=10)
 
         self.build()
@@ -353,12 +535,18 @@ class BaseWidget:
     def header(self, icon: str, title: str):
         h = tk.Frame(self.inner, bg=self.colors["widget_bg"])
         h.pack(fill="x", pady=(0, 6))
+
+        # Kontrastbewusste Textfarbe für Header
+        widget_bg = self.colors["widget_bg"]
+        accent_color = self.colors["accent"]
+        header_text_color = get_contrast_aware_text_color(widget_bg, accent_color)
+
         tk.Label(
             h,
             text=f"{icon} {title}",
             font=(FONT_FAMILY, 10, "bold"),
             bg=self.colors["widget_bg"],
-            fg=self.colors["accent"],
+            fg=header_text_color,
         ).pack(side="left")
         tk.Frame(self.inner, height=1, bg=self.colors["border"]).pack(fill="x", pady=(0, 8))
 
@@ -430,7 +618,7 @@ class DateTimeWidget(BaseWidget):
         self.lbl_date = tk.Label(
             self.inner, text="",
             font=(FONT_FAMILY, date_fs),
-            bg=self.colors["widget_bg"], fg=self.colors["accent"],
+            bg=self.colors["widget_bg"], fg=get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"]),
         )
         self.lbl_date.pack()
 
@@ -470,7 +658,7 @@ class WeatherWidget(BaseWidget):
         self.lbl_desc = tk.Label(
             self.inner, text="Loading weather data...",
             font=(FONT_FAMILY, 13 if self.big else 10),
-            bg=self.colors["widget_bg"], fg=self.colors["accent"],
+            bg=self.colors["widget_bg"], fg=get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"]),
         )
         self.lbl_desc.pack(pady=(2, 4))
 
@@ -586,7 +774,7 @@ class CalendarWidget(BaseWidget):
             row = tk.Frame(self.list_frame, bg=self.colors["widget_bg"])
             row.pack(fill="x", pady=2)
             tk.Label(row, text=f"▸ {start_fmt}", font=(FONT_FAMILY, 10),
-                    bg=self.colors["widget_bg"], fg=self.colors["accent"],
+                    bg=self.colors["widget_bg"], fg=get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"]),
                     width=14, anchor="w").pack(side="left")
             tk.Label(row, text=summary, font=(FONT_FAMILY, 10),
                     bg=self.colors["widget_bg"], fg=self.colors["text"],
@@ -620,7 +808,7 @@ class StockCryptoWidget(BaseWidget):
             self.inner,
             text=f"{self._sym} — {self._name}",
             font=(FONT_FAMILY, 12 if self.big else 10, "bold"),
-            bg=self.colors["widget_bg"], fg=self.colors["accent"],
+            bg=self.colors["widget_bg"], fg=get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"]),
         )
         self.lbl_name.pack(pady=(2, 0))
 
@@ -823,7 +1011,7 @@ class CountdownWidget(BaseWidget):
         self.lbl_event = tk.Label(
             self.inner, text=self._label_text,
             font=(FONT_FAMILY, 14 if self.big else 11),
-            bg=self.colors["widget_bg"], fg=self.colors["accent"],
+            bg=self.colors["widget_bg"], fg=get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"]),
         )
         self.lbl_event.pack(pady=(4, 0))
 
@@ -963,17 +1151,23 @@ class Dashboard(tk.Tk):
         hdr = tk.Frame(parent, bg=c["bg"])
         hdr.pack(fill="x")
 
+        # Kontrastbewusste Textfarbe für Dashboard-Titel
+        bg_color = c["bg"]
+        accent_color = c["accent"]
+        header_text_color = get_contrast_aware_text_color(bg_color, accent_color)
+
+
         tk.Label(
             hdr,
             text="▣ DASHBOARD",
             font=(FONT_FAMILY, 20, "bold"),
-            bg=c["bg"], fg=c["accent"],
+            bg=c["bg"], fg=header_text_color,
         ).pack(side="left")
 
         self._hdr_clock = tk.Label(
             hdr, text="",
             font=(FONT_FAMILY, 14, "bold"),
-            bg=c["bg"], fg=c["accent"],
+            bg=c["bg"], fg=header_text_color,
         )
         self._hdr_clock.pack(side="right", padx=(0, 4))
         self._tick_header()
