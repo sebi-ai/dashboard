@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" href="favicon.png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+</head>
+<body>
+<div id="countdown-window">
+<p>Choose the date you want to count down to:</p>
+<input type="date" id="countdown-date">
+<br>
+<br>
+<button class="btn" id="save-countdown">Save</button>
+</div>
+<div id="calendar-window">
+<p>Connect your Google account to show upcoming events in the Calendar widget.</p>
+<p>Status: <span id="calendar-connection-status">Checking...</span></p>
+<button type="button" id="connect-google-calendar-btn" class="btn">Connect Google Calendar</button>
+<button type="button" id="disconnect-google-calendar-btn" class="btn" style="display:none;">Disconnect</button>
+<div id="calendar-events-box">
+<h3>Upcoming events</h3>
+<ul id="calendar-events-list"></ul>
+</div>
+<br>
+<button class="btn" id="close-calendar-window">Save</button>
+</div>
+<div id="notifications-window">
+<p>Connect your Google account to show your latest Gmail messages here.</p>
+<p>Status: <span id="notifications-connection-status">Checking...</span></p>
+<button type="button" id="connect-google-mail-btn" class="btn">Connect Google Mail</button>
+<button type="button" id="disconnect-google-mail-btn" class="btn" style="display:none;">Disconnect</button>
+<div id="notifications-messages-box">
+<h3>Latest messages</h3>
+<ul id="notifications-messages-list"></ul>
+</div>
+<br>
+<button class="btn" id="close-notifications-window">Save</button>
+</div>
+<div id="stock-crypto-window">
+<p>Choose a stock or a cryptocurrency to display:</p>
+<input type="text" id="stock-crypto-search" placeholder="e.g. Apple or Bitcoin" autocomplete="off">
+<ul id="stock-crypto-suggestions"></ul>
+<p id="stock-crypto-selected" style="display:none;">Selected: <strong id="stock-crypto-selected-label"></strong></p>
+<br>
+<button class="btn" id="save-stock-crypto">Save</button>
+</div>
+<div id="site-notification" class="site-notification">
+<span class="site-notification__text"></span>
+</div>
+<div id="head">
+<div id="settings-menu">
+<button class="btn" id="settings-trigger">☰</button>
+<div id="settings-dropdown">
+<img src="favicon.png" id="menu-logo" alt="Logo">
+<button class="btn menu-btn" id="home-btn">Home</button>
+<button id="redirect-start-btn" class="btn menu-btn">Open Dashboard</button>
+<button class="btn menu-btn" id="settings-btn">Settings</button>
+<button class="btn menu-btn" id="about-btn">About me</button>
+</div>
+</div>
+<h1 id="settings-heading">Settings</h1>
+<p>Adjust your dashboard as you want it, then press the "Save" button to save your changes.</p>
+<br>
+<div id="settings-sections">
+<div id="Location" class="settings-section">
+<h2>Location</h2>
+<p>Set the location you want data from</p>
+<label for="location">Location:</label>
+<input type="text" id="location" name="location" enabled>
+<ul id="location-suggestions"></ul>
+<br>
+<br>
+<label for="use-ip-location">Use IP Location</label>
+<input type="checkbox" id="use-ip-location" name="use-ip-location" unchecked>
+</div>
+<div id="Widgets" class="settings-section">
+<h2>Widgets</h2>
+<p>By pressing the checkboxes in front of the widgets, you can add them to your dashboard.<br>
+You can enable as many widgets as you want — arrange them below in "Align Widgets".</p>
+<ul id="widgets-list">
+<li>
+<input type="checkbox" id="weather-widget" name="weather-widget" class="limited-checkbox" unchecked>
+<label for="weather-widget">Weather</label>
+</li>
+<li>
+<input type="checkbox" id="date-time-widget" name="date-time-widget" class="limited-checkbox">
+<label for="date-time-widget">Date and Time</label>
+</li>
+<li>
+<input type="checkbox" id="notifications-widget" name="notifications-widget" class="limited-checkbox">
+<label for="notifications-widget">Notifications</label>
+<button type="button" id="open-notifications-btn" class="btn btn-small">Change</button>
+</li>
+<li>
+<input type="checkbox" id="countdown-widget" name="countdown-widget" class="limited-checkbox">
+<label for="countdown-widget">Countdown to Date</label>
+<button type="button" id="open-countdown-btn" class="btn btn-small">Change</button>
+</li>
+<li>
+<input type="checkbox" id="calendar-widget" name="calendar-widget" class="limited-checkbox">
+<label for="calendar-widget">Calendar</label>
+<button type="button" id="open-calendar-btn" class="btn btn-small">Change</button>
+</li>
+<li>
+<input type="checkbox" id="stock-crypto-widget" name="stock-crypto-widget" class="limited-checkbox">
+<label for="stock-crypto-widget">Stock/Crypto Prices</label>
+<button type="button" id="open-stock-crypto-btn" class="btn btn-small">Change</button>
+</li>
+</ul>
+</div>
+<div id="AlignWidgets" class="settings-section">
+<h2>Align Widgets</h2>
+<p>Arrange your widgets freely: drag a widget by its body to move it anywhere
+and pull a corner handle to resize it to any width or height — no snapping.
+The other widgets move out of the way and automatically fill any empty
+space, and no widget can grow so big that it hides the others. Only widgets
+enabled above are shown.</p>
+<div id="layout-map">
+<div id="layout-grid"></div>
+</div>
+<p id="layout-hint" class="layout-hint">Enable widgets above to arrange them.</p>
+</div>
+<div id="theme" class="settings-section">
+<h2>Theme</h2>
+<div class="theme-option">
+<input type="checkbox" id="theme-mode-preset" name="theme-mode-preset" class="theme-mode-checkbox">
+<label for="theme-mode-preset">Choose one of the preset themes <br> for your dashboard:</label>
+</div>
+<label for="theme-select">Select Theme:</label>
+<select id="theme-select" name="theme-select">
+<option value="" disabled selected hidden>Choose an option</option>
+<option value="light">Light</option>
+<option value="dark">Dark</option>
+<option value="blue">Blue</option>
+<option value="green">Green</option>
+<option value="red">Red</option>
+<option value="pink">Pink</option>
+<option value="purple">Purple</option>
+</select>
+<div class="theme-option">
+<input type="checkbox" id="theme-mode-custom" name="theme-mode-custom" class="theme-mode-checkbox">
+<label for="theme-mode-custom">Or choose your own color:</label>
+<input type="color" id="custom-color" name="custom-color" value="#0000ff">
+</div>
+</div>
+</div>
+<button id="save-settings-btn" class="btn">Save Settings</button>
+<script src="script.js"></script>
+</body>
+</html>
