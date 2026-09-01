@@ -1,12 +1,11 @@
-#settings {
-  display: none;
-}
-
 #settings-sections {
-  display: flex;
-  gap: 20px;
-  align-items: flex-start;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 22px;
+  align-items: stretch;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 0 8px 30px;
 }
 
 .btn {
@@ -47,7 +46,7 @@
 }
 
 p, ul, ol, input, label {
-  font-size: 20px;
+  font-size: 16px;
   font-family: "Orbitron", sans-serif;
 }
 
@@ -58,9 +57,11 @@ h1, h2, h3, h4, h5, h6, button {
 #home {
   border: 2px solid rgb(0, 2, 131);
   border-radius: 40px;
-  height: 650px;
+  height: auto;
+  max-height: 88vh;
+  overflow-y: auto;
   width: auto;
-  min-width: 1000px !important;
+  min-width: min(1000px, 92vw);
   padding: 35px;
   box-shadow: 0 10px 30px rgba(0, 2, 131, 0.3);
   position: fixed;
@@ -70,31 +71,65 @@ h1, h2, h3, h4, h5, h6, button {
 }
 
 
-#Location {
+#Location, #Widgets, #AlignWidgets, #theme {
   border: 2px solid rgb(0, 2, 131);
-  border-radius: 40px;
-  height: 250px;
+  border-radius: 26px;
   box-shadow: 0 10px 30px rgba(0, 2, 131, 0.3);
-  padding-top: 20px;
-  padding-left: 20px;
-  width: auto;
-  min-width: 400px;
-  flex: 1 1 320px;
+  padding: 26px 28px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+#Location {
+  grid-column: span 3;
 }
 
 #Widgets {
-  border: 2px solid rgb(0, 2, 131);
-  border-radius: 40px;
-  padding-top: 20px;
-  padding-left: 20px;
-  padding-bottom: 20px;
-  width: auto;
-  min-width: 800px;
-  flex: 2 1 520px;
-  min-height: 350px;
-  height: auto;
-  margin-bottom: 10px;
-  box-shadow: 0 10px 30px rgba(0, 2, 131, 0.3);
+  grid-column: span 4;
+}
+
+#AlignWidgets {
+  grid-column: span 5;
+}
+
+#theme {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1200px) {
+  #Location {
+    grid-column: 1 / -1;
+  }
+  #Widgets {
+    grid-column: span 7;
+  }
+  #AlignWidgets {
+    grid-column: span 5;
+  }
+}
+
+@media (max-width: 820px) {
+  #Location,
+  #Widgets,
+  #AlignWidgets {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Settings page: center the heading and intro, keep the Save button centered. */
+body:has(#settings-sections) #settings-heading {
+  text-align: center;
+}
+
+body:has(#settings-sections) #settings-heading + p {
+  text-align: center;
+  max-width: 720px;
+  margin: 10px auto 34px;
+}
+
+body:has(#settings-sections) #save-settings-btn {
+  display: block;
+  margin: 0 auto 40px;
 }
 
 #calendar-window #disconnect-google-calendar-btn {
@@ -109,19 +144,6 @@ h1, h2, h3, h4, h5, h6, button {
 #calendar-events-box li {
   border-bottom: 1px solid rgba(0, 2, 131, 0.2);
   padding: 6px 0;
-}
-
-#theme {
-  border: 2px solid rgb(0, 2, 131);
-  border-radius: 40px;
-  padding-top: 20px;
-  padding-left: 20px;
-  padding-bottom: 20px;
-  width: auto;
-  min-width: 400px;
-  flex: 1 1 320px;
-  margin-bottom: 50px;
-  box-shadow: 0 10px 30px rgba(0, 2, 131, 0.3);
 }
 
 .theme-option {
@@ -159,6 +181,97 @@ input[type="checkbox"] {
   margin: 0;
 }
 
+#layout-map {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 16 / 9;
+  border: 2px solid rgb(0, 2, 131);
+  border-radius: 18px;
+  background: rgba(0, 2, 131, 0.06);
+  overflow: hidden;
+  touch-action: none;
+}
+
+#layout-grid {
+  position: absolute;
+  inset: 0;
+}
+
+.layout-cell {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 6px;
+  box-sizing: border-box;
+  border: 2px dashed rgba(0, 2, 131, 0.5);
+  border-radius: 10px;
+  background: #ffffff;
+  color: rgb(0, 2, 131);
+  font-family: "Orbitron", sans-serif;
+  font-size: 12px;
+  cursor: grab;
+  overflow: hidden;
+  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.layout-cell:hover {
+  border-color: rgb(0, 2, 131);
+  border-style: solid;
+  box-shadow: 0 4px 12px rgba(0, 2, 131, 0.2);
+}
+
+.layout-cell.layout-moving {
+  opacity: 0.7;
+  border-style: solid;
+  cursor: grabbing;
+}
+
+.layout-cell.layout-resizing {
+  border-style: solid;
+  border-color: rgb(0, 2, 131);
+  box-shadow: 0 0 0 3px rgba(0, 2, 131, 0.35);
+}
+
+.layout-handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  display: block;
+  opacity: 0.35;
+  z-index: 5;
+}
+
+.layout-cell:hover .layout-handle,
+.layout-cell.layout-moving .layout-handle,
+.layout-cell.layout-resizing .layout-handle {
+  opacity: 1;
+}
+
+.layout-handle::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 2px solid rgb(0, 2, 131);
+  border-radius: 3px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 2, 131, 0.35);
+}
+
+.layout-handle-tl { top: 1px; left: 1px; cursor: nwse-resize; }
+.layout-handle-tr { top: 1px; right: 1px; cursor: nesw-resize; }
+.layout-handle-bl { bottom: 1px; left: 1px; cursor: nesw-resize; }
+.layout-handle-br { bottom: 1px; right: 1px; cursor: nwse-resize; }
+
+.layout-hint {
+  margin-top: 10px;
+  color: rgba(0, 11, 97, 0.6);
+  font-style: italic;
+  display: none;
+}
+
 #widgets-list li {
   display: flex;
   align-items: center;
@@ -168,27 +281,6 @@ input[type="checkbox"] {
 
 #widgets-list label {
   flex: 1;
-}
-
-.star-checkbox {
-  appearance: none;
-  width: 30px;
-  height: 30px;
-  background-color: gray;
-  cursor: pointer;
-  clip-path: polygon(
-    50% 0%, 61% 35%, 98% 35%, 68% 57%,
-    79% 91%, 50% 70%, 21% 91%, 32% 57%,
-    2% 35%, 39% 35%
-  );
-}
-
-.star-checkbox:checked {
-  background-color: gold;
-}
-
-input, textarea {
-  user-select: text;
 }
 
 * {
@@ -226,25 +318,6 @@ option {
 option:checked {
   background-color: rgb(0, 2, 131);
   color: white;
-}
-
-.select-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-.select-wrapper select {
-  appearance: none;
-  padding-right: 32px;
-}
-
-.select-wrapper::after {
-  content: "▼";
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
 }
 
 input[type="color"] {
@@ -417,17 +490,6 @@ border-color: rgb(0, 2, 131);
     padding: 8px 0;
 }
 
-#notifications-messages-box .message-subject {
-    font-weight: 600;
-}
-
-#notifications-messages-box .message-from,
-#notifications-messages-box .message-snippet {
-    display: block;
-    font-size: 14px;
-    color: rgba(0, 2, 131, 0.7);
-}
-
 #stock-crypto-window {
     display: none;
     position: fixed;
@@ -464,6 +526,16 @@ border-color: rgb(0, 2, 131);
 
 #stock-crypto-suggestions li:hover {
     background-color: #f0f0f0;
+}
+
+#stock-crypto-suggestions li.suggestion-empty {
+    color: rgba(0, 2, 131, 0.6);
+    font-size: 14px;
+    cursor: default;
+}
+
+#stock-crypto-suggestions li.suggestion-empty:hover {
+    background-color: transparent;
 }
 
 #stock-crypto-suggestions li .suggestion-type {
@@ -574,6 +646,7 @@ body:has(#settings-sections) #head {
 }
 
 body:has(#settings-sections) {
+  background: #ffffff;
   overflow-y: auto;
 }
 
@@ -603,11 +676,13 @@ body:has(#settings-sections) {
   z-index: 2000;
 }
 
-#settings-menu:hover #settings-dropdown {
+#settings-menu:hover #settings-dropdown,
+#settings-menu.open #settings-dropdown {
   display: flex;
 }
 
-#settings-menu:hover #settings-trigger {
+#settings-menu:hover #settings-trigger,
+#settings-menu.open #settings-trigger {
   visibility: hidden;
   pointer-events: none;
 }

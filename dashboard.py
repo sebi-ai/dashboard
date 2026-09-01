@@ -1,9 +1,12 @@
 import json
+import math
 import os
+import queue
 import sys
 import threading
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import datetime
 
 try:
@@ -112,34 +115,47 @@ THEMES = {
         "positive": "#a855f7",
         "negative": "#ff4488",
     },
-}
-
-WEBSITE_THEME = {
-    "bg": "#f4f7ff",
-    "widget_bg": "#ffffff",
-    "accent": "#0002c0",
-    "text": "#071a4a",
-    "border": "#0002c0",
-    "muted": "#5d6c86",
-    "positive": "#0a8f5b",
-    "negative": "#d83a52",
-}
-
-STAR_MAP = {
-    "weather-widget-star": "weather",
-    "notifications-widget-star": "notifications",
-"date-time-widget-star": "dateTime",
-    "countdown-widget-star": "countdown",
-    "calendar-widget-star":  "calendar",
-    "stock-crypto-widget-star": "stockCrypto",
+    "light": {
+        "bg": "#f4f7ff",
+        "widget_bg": "#ffffff",
+        "accent": "#0002c0",
+        "text": "#071a4a",
+        "border": "#0002c0",
+        "muted": "#5d6c86",
+        "positive": "#0a8f5b",
+        "negative": "#d83a52",
+    },
+    "dark": {
+        "bg": "#0b0b12",
+        "widget_bg": "#16161f",
+        "accent": "#8ab4f8",
+        "text": "#e6e6ee",
+        "border": "#2e2e42",
+        "muted": "#6f6f88",
+        "positive": "#00e58a",
+        "negative": "#ff5566",
+    },
+    "pink": {
+        "bg": "#1a0d14",
+        "widget_bg": "#2b1221",
+        "accent": "#ff66b2",
+        "text": "#ffe3f0",
+        "border": "#5c2040",
+        "muted": "#a05a7e",
+        "positive": "#00e58a",
+        "negative": "#ff5566",
+    },
 }
 
 SERVER_URL = "http://localhost:8000"
 
 
+def settings_file_path() -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+
+
 def load_settings() -> dict:
-    here = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(here, "settings.json")
+    path = settings_file_path()
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -147,6 +163,14 @@ def load_settings() -> dict:
         except Exception as e:
             print(f"[dashboard] settings.json load error: {e}")
     return {}
+
+
+def settings_file_mtime():
+    """Modification time of settings.json, or None if it does not exist yet."""
+    try:
+        return os.path.getmtime(settings_file_path())
+    except OSError:
+        return None
 
 
 def extract_colors(settings: dict) -> dict:
@@ -165,16 +189,18 @@ def extract_colors(settings: dict) -> dict:
     elif theme_mode == "preset" and preset_theme:
         # Preset Theme aus der Website - mappe auf Dashboard-Themes
         theme_mapping = {
-            "light": "ice",      # Helles Theme
-            "dark": "midnight",  # Dunkles Theme
+            "light": "light",    # Helles Theme
+            "dark": "dark",      # Dunkles Theme
             "blue": "default",   # Blau (Standard)
             "green": "forest",   # Grün
             "red": "sunset",     # Rot/Orange
-            "pink": "cyberpunk", # Pink/Magenta
+            "pink": "pink",      # Pink/Magenta
             "purple": "midnight",# Lila
         }
-        theme_key = theme_mapping.get(preset_theme, "default")
-        base = THEMES.get(theme_key, THEMES["default"]).copy()
+        theme_key = theme_mapping.get(preset_theme)
+        if theme_key is None and preset_theme in THEMES:
+            theme_key = preset_theme  # legacy saves may store a dashboard theme name
+        base = THEMES.get(theme_key or "default", THEMES["default"]).copy()
 
         # Falls customColor zusätzlich gesetzt ist, überschreibe accent/border
         if custom_color and isinstance(custom_color, str) and custom_color.startswith("#"):
@@ -401,11 +427,13 @@ def run_in_thread(func, *args, daemon=True):
 class RoundedBackground(tk.Canvas):
     """A canvas that draws a rounded rectangle background behind its parent frame."""
     def __init__(self, parent, bg, border_color, radius=15, **kwargs):
-        super().__init__(parent, **kwargs)
+        # The canvas itself is painted with the PARENT's background color so
+        # the area outside the rounded rectangle blends into the page, and
+        # nothing white ever shows through at the corners.
+        super().__init__(parent, bg=parent.cget("bg"), highlightthickness=0, **kwargs)
         self.bg = bg
         self.border_color = border_color
         self.radius = radius
-        self.configure(highlightthickness=0)
         self.bind("<Configure>", self.on_configure)
         # Make sure this canvas is below the content frame.
         # NOTE: tk.Canvas aliases `lower` to `tag_lower` (a canvas-item
@@ -442,99 +470,140 @@ class RoundedBackground(tk.Canvas):
         # Clamp radius to half the smaller dimension
         diameter = 2 * radius
         if x2 - x1 < diameter:
-            radius = (x2 - x1) // 2
+            radius = max((x2 - x1) // 2, 0)
         if y2 - y1 < diameter:
-            radius = (y2 - y1) // 2
+            radius = max((y2 - y1) // 2, 0)
 
-        # Draw the filled rounded rectangle using bezier curves
+        # Fill: a polygon sampled along the same outline as the border but
+        # inset by half the border width. If it were drawn on the exact same
+        # path, the border stroke's inner half would be covered by the fill and
+        # the outline would look thin / as if it "points into the box" at the
+        # corners. The half-width inset leaves room for the full border.
         if fill:
-            self._draw_rounded_polygon(x1, y1, x2, y2, radius, fill=fill)
+            inset = max(linewidth / 2.0, 0.5)
+            self.create_polygon(
+                self._rounded_rect_points(
+                    x1 + inset, y1 + inset, x2 - inset, y2 - inset,
+                    max(radius - inset, 0),
+                ),
+                fill=fill,
+                outline="",
+            )
 
-        # Draw the border
+        # Border
         if outline and linewidth > 0:
             self._draw_rounded_border(x1, y1, x2, y2, radius, outline, linewidth)
 
-    def _draw_rounded_polygon(self, x1, y1, x2, y2, r, **kwargs):
-        """Draw the filled part of the rounded rectangle."""
-        points = [
-            x1 + r, y1,
-            x2 - r, y1,
-            x2, y1,
-            x2, y1 + r,
-            x2, y2 - r,
-            x2, y2,
-            x2 - r, y2,
-            x1 + r, y2,
-            x1, y2,
-            x1, y2 - r,
-            x1, y1 + r,
-            x1, y1
-        ]
-        self.create_polygon(points, **kwargs, smooth=True)
+    def _rounded_rect_points(self, x1, y1, x2, y2, r):
+        """Sample the rounded-rect outline (lines + quarter arcs) as polygon points."""
+        if r <= 0:
+            return [x1, y1, x2, y1, x2, y2, x1, y2]
+
+        pts = [x1 + r, y1, x2 - r, y1]                     # top edge
+        pts += self._arc_points(x2 - r, y1 + r, 270, 360, r)  # top-right corner
+        pts += [x2, y1 + r, x2, y2 - r]                    # right edge
+        pts += self._arc_points(x2 - r, y2 - r, 0, 90, r)  # bottom-right corner
+        pts += [x2 - r, y2, x1 + r, y2]                    # bottom edge
+        pts += self._arc_points(x1 + r, y2 - r, 90, 180, r)  # bottom-left corner
+        pts += [x1, y2 - r, x1, y1 + r]                    # left edge
+        pts += self._arc_points(x1 + r, y1 + r, 180, 270, r)  # top-left corner
+        return pts
+
+    def _arc_points(self, cx, cy, start_deg, end_deg, r, steps=8):
+        """Points along a quarter arc using the same angle convention as create_arc."""
+        pts = []
+        for i in range(steps + 1):
+            angle = math.radians(start_deg + (end_deg - start_deg) * i / steps)
+            pts.append(cx + r * math.cos(angle))
+            pts.append(cy + r * math.sin(angle))
+        return pts
 
     def _draw_rounded_border(self, x1, y1, x2, y2, r, color, width):
-        """Draw the border of the rounded rectangle using arcs and lines."""
-        d = 2 * r
+        """Draw the rounded-rect border as one continuous outline polygon.
 
-        # Top-left to top-right
-        self.create_line(x1 + r, y1, x2 - r, y1, fill=color, width=width)
-        # Top-right arc
-        self.create_arc(x2 - d, y1, x2, y1 + d, start=0, extent=90,
-                        outline=color, width=width, style=tk.ARC)
-        # Top-right to bottom-right
-        self.create_line(x2, y1 + r, x2, y2 - r, fill=color, width=width)
-        # Bottom-right arc
-        self.create_arc(x2 - d, y2 - d, x2, y2, start=270, extent=90,
-                        outline=color, width=width, style=tk.ARC)
-        # Bottom-right to bottom-left
-        self.create_line(x1 + r, y2, x2 - r, y2, fill=color, width=width)
-        # Bottom-left arc
-        self.create_arc(x1, y2 - d, x1 + d, y2, start=180, extent=90,
-                        outline=color, width=width, style=tk.ARC)
-        # Bottom-left to top-left
-        self.create_line(x1, y1 + r, x1, y2 - r, fill=color, width=width)
-        # Top-left arc
-        self.create_arc(x1, y1, x1 + d, y1 + d, start=90, extent=90,
-                        outline=color, width=width, style=tk.ARC)
+        (create_arc with style=ARC does not render reliably on some Tk/Windows
+        builds, which left the corners looking like two straight lines meeting
+        at a wrong angle. A single closed polygon draws the full rounded path,
+        corners included, in one stroke.)
+        """
+        self.create_polygon(
+            self._rounded_rect_points(x1, y1, x2, y2, r),
+            fill="",
+            outline=color,
+            width=width,
+        )
 
 
 class BaseWidget:
     REFRESH_INTERVAL = 60
 
-    def __init__(self, parent: tk.Frame, colors: dict, big: bool = False, settings: dict = None):
+    def __init__(self, parent: tk.Frame, colors: dict, big: bool = False, settings: dict = None, scale: float = 1.0, card_h_px: float = None):
         self.parent = parent
         self.colors = colors
         self.big = big
         self.settings = settings or {}
+        self.scale = max(scale, 0.5)
+        self.card_h_px = card_h_px  # card height in px, used by list widgets
         self._alive = True
 
-        # Create a container frame
+        # Create a container frame. NOTE: it is NOT packed here anymore — the
+        # Dashboard places it with the grid manager according to the user's
+        # custom layout (widgetLayout). Only enabled widgets get a container,
+        # so disabled widgets simply don't exist on screen.
         self.container_frame = tk.Frame(parent, bg=parent.cget("bg"))
-        self.container_frame.pack(fill="both", expand=big, padx=0, pady=(0, 10))
+        self.container_frame.grid_rowconfigure(0, weight=1)
+        self.container_frame.grid_columnconfigure(0, weight=1)
 
-        # Create rounded background canvas (positioned first, then content on top)
+        # Thread-safe UI updates: worker threads post callables here and the
+        # main thread drains them, so Tk widgets are never touched off-thread.
+        self._ui_queue = queue.Queue()
+
+        # Rounded background canvas fills the whole container. The content
+        # frame is stacked ON TOP of it in the same grid cell (not packed
+        # below it): packing both with expand=True makes the canvas swallow
+        # the container and squish the content into a thin strip at the
+        # bottom, which is what made widgets look "empty".
         self.bg_canvas = RoundedBackground(
             self.container_frame,
             bg=colors["widget_bg"],
             border_color=colors["border"],
             radius=30,
         )
-        self.bg_canvas.pack(fill="both", expand=True)
-        # bg_canvas is a tk.Canvas, where `lower()` is aliased to the
-        # canvas-item `tag_lower` (needs a tag/id). Lower the *widget*
-        # in the stacking order via the raw tk command instead.
-        self.bg_canvas.tk.call("lower", self.bg_canvas._w)
+        self.bg_canvas.grid(row=0, column=0, sticky="nsew")
 
-        # Content frame on top of the canvas
+        # Content frame on top of the canvas, inset so the rounded border shows.
         self.inner = tk.Frame(self.container_frame, bg=colors["widget_bg"])
-        self.inner.pack(fill="both", expand=True, padx=14, pady=10)
+        self.inner.grid(row=0, column=0, sticky="nsew", padx=18, pady=12)
+        self.inner.tk.call("raise", self.inner._w)
 
         self.build()
+        self._drain_ui()
         self._schedule_refresh()
+
+    def ui(self, fn):
+        """Run `fn` on the Tk main thread. Safe to call from any thread."""
+        self._ui_queue.put(fn)
+
+    def _drain_ui(self):
+        """Main-thread loop that executes callbacks posted by worker threads."""
+        try:
+            while True:
+                fn = self._ui_queue.get_nowait()
+                try:
+                    fn()
+                except Exception as exc:
+                    print(f"[{self.__class__.__name__}] UI update error: {exc}")
+        except queue.Empty:
+            pass
+        if self._alive:
+            try:
+                self.container_frame.after(80, self._drain_ui)
+            except tk.TclError:
+                pass  # widget was destroyed between the check and the schedule
 
     def header(self, icon: str, title: str):
         h = tk.Frame(self.inner, bg=self.colors["widget_bg"])
-        h.pack(fill="x", pady=(0, 6))
+        h.pack(fill="x", pady=(0, 8))
 
         # Kontrastbewusste Textfarbe für Header
         widget_bg = self.colors["widget_bg"]
@@ -544,11 +613,14 @@ class BaseWidget:
         tk.Label(
             h,
             text=f"{icon} {title}",
-            font=(FONT_FAMILY, 10, "bold"),
-            bg=self.colors["widget_bg"],
+            font=(FONT_FAMILY, self.fs(12), "bold"),
+            bg=widget_bg,
             fg=header_text_color,
         ).pack(side="left")
-        tk.Frame(self.inner, height=1, bg=self.colors["border"]).pack(fill="x", pady=(0, 8))
+
+        # Short accent underline instead of a full-width dim line — reads as a
+        # modern "active tab" marker.
+        tk.Frame(self.inner, height=2, width=72, bg=accent_color).pack(anchor="w", pady=(0, 10))
 
     def label(self, parent, text="", font_size=12, bold=False, color_key="text", anchor="center") -> tk.Label:
         weight = "bold" if bold else "normal"
@@ -578,6 +650,11 @@ class BaseWidget:
     def build(self):
         pass
 
+    def fs(self, size: int) -> int:
+        """Scale a font size to the widget's on-screen footprint, so big cards
+        get big content instead of leaving 3/4 of the card empty."""
+        return max(int(size * self.scale), 8)
+
     def fetch_data(self):
         pass
 
@@ -605,8 +682,11 @@ class DateTimeWidget(BaseWidget):
     def build(self):
         self.header("🕐", "DATE & TIME")
 
-        time_fs = 60 if self.big else 32
-        date_fs = 16 if self.big else 12
+        time_fs = self.fs(44 if self.big else 34)
+        date_fs = self.fs(18 if self.big else 14)
+
+        # Expandable spacers center the content vertically in the card.
+        tk.Frame(self.inner, bg=self.colors["widget_bg"]).pack(fill="both", expand=True)
 
         self.lbl_time = tk.Label(
             self.inner, text="--:--:--",
@@ -625,14 +705,18 @@ class DateTimeWidget(BaseWidget):
         if self.big:
             self.lbl_day = tk.Label(
                 self.inner, text="",
-                font=(FONT_FAMILY, 13),
+                font=(FONT_FAMILY, self.fs(15)),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
             )
-            self.lbl_day.pack(pady=(4, 0))
+            self.lbl_day.pack(pady=(6, 0))
+
+        tk.Frame(self.inner, bg=self.colors["widget_bg"]).pack(fill="both", expand=True)
 
         self._tick()
 
     def _tick(self):
+        if not self._alive:
+            return
         now = datetime.now()
         self.lbl_time.config(text=now.strftime("%H:%M:%S"))
         self.lbl_date.config(text=now.strftime("%d. %B %Y"))
@@ -647,7 +731,10 @@ class WeatherWidget(BaseWidget):
     def build(self):
         self.header("🌤", "WEATHER")
 
-        temp_fs = 52 if self.big else 30
+        temp_fs = self.fs(44 if self.big else 32)
+        desc_fs = self.fs(15 if self.big else 12)
+        tk.Frame(self.inner, bg=self.colors["widget_bg"]).pack(fill="both", expand=True)
+
         self.lbl_temp = tk.Label(
             self.inner, text="--°C",
             font=(FONT_FAMILY, temp_fs, "bold"),
@@ -657,7 +744,7 @@ class WeatherWidget(BaseWidget):
 
         self.lbl_desc = tk.Label(
             self.inner, text="Loading weather data...",
-            font=(FONT_FAMILY, 13 if self.big else 10),
+            font=(FONT_FAMILY, desc_fs),
             bg=self.colors["widget_bg"], fg=get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"]),
         )
         self.lbl_desc.pack(pady=(2, 4))
@@ -665,17 +752,19 @@ class WeatherWidget(BaseWidget):
         if self.big:
             self.lbl_location = tk.Label(
                 self.inner, text="",
-                font=(FONT_FAMILY, 11),
+                font=(FONT_FAMILY, self.fs(13)),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
             )
-            self.lbl_location.pack()
+            self.lbl_location.pack(pady=(4, 0))
 
             self.lbl_details = tk.Label(
                 self.inner, text="",
-                font=(FONT_FAMILY, 11),
+                font=(FONT_FAMILY, self.fs(13)),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
             )
             self.lbl_details.pack(pady=(4, 0))
+
+        tk.Frame(self.inner, bg=self.colors["widget_bg"]).pack(fill="both", expand=True)
 
     def fetch_data(self):
         if not HAS_REQUESTS:
@@ -709,23 +798,28 @@ class WeatherWidget(BaseWidget):
             wind = cur.get("windspeed_10m", "--")
             humidity = cur.get("relative_humidity_2m", "--")
             desc, icon = WEATHER_CODES.get(code, ("Unknown", "?"))
-
-            self.lbl_temp.config(text=f"{icon} {temp}°C")
-            self.lbl_desc.config(text=desc)
-
-            if self.big:
-                self.lbl_location.config(
-                    text=f"📍 {location_name}" if location_name else ""
-                )
-                self.lbl_details.config(
-                    text=(
-                        f"Feels like {feels}°C • "
-                        f"💨 {wind} km/h • "
-                        f"💧 {humidity}%"
-                    )
-                )
+            self.ui(lambda: self._show_weather(
+                temp, feels, desc, icon, wind, humidity, location_name
+            ))
         except Exception as exc:
-            self.lbl_desc.config(text=f"Error: {str(exc)[:40]}")
+            err = str(exc)[:40]
+            self.ui(lambda: self.lbl_desc.config(text=f"Error: {err}"))
+
+    def _show_weather(self, temp, feels, desc, icon, wind, humidity, location_name):
+        self.lbl_temp.config(text=f"{icon} {temp}°C")
+        self.lbl_desc.config(text=desc)
+
+        if self.big:
+            self.lbl_location.config(
+                text=f"📍 {location_name}" if location_name else ""
+            )
+            self.lbl_details.config(
+                text=(
+                    f"Feels like {feels}°C • "
+                    f"💨 {wind} km/h • "
+                    f"💧 {humidity}%"
+                )
+            )
 
 
 class CalendarWidget(BaseWidget):
@@ -744,17 +838,18 @@ class CalendarWidget(BaseWidget):
         try:
             r = requests.get(f"{SERVER_URL}/calendar/events", timeout=6)
             if r.status_code == 401:
-                self._set_status("Google Calendar not connected.\nPlease connect in Settings.")
+                self.ui(lambda: self._set_status("Google Calendar not connected.\nPlease connect in Settings."))
                 return
             if r.status_code != 200:
-                self._set_status(f"Server error: {r.status_code}")
+                self.ui(lambda: self._set_status(f"Server error: {r.status_code}"))
                 return
             events = r.json().get("events", [])
-            self._render_events(events)
+            self.ui(lambda: self._render_events(events))
         except requests.exceptions.ConnectionError:
-            self._set_status("Server not reachable.\n→ Start server.py")
+            self.ui(lambda: self._set_status("Server not reachable.\n→ Start server.py"))
         except Exception as exc:
-            self._set_status(f"Error: {str(exc)[:50]}")
+            err = str(exc)[:50]
+            self.ui(lambda: self._set_status(f"Error: {err}"))
 
     def _render_events(self, events):
         self._clear()
@@ -772,11 +867,11 @@ class CalendarWidget(BaseWidget):
             summary = ev.get("summary", "No title")[:35]
 
             row = tk.Frame(self.list_frame, bg=self.colors["widget_bg"])
-            row.pack(fill="x", pady=2)
-            tk.Label(row, text=f"▸ {start_fmt}", font=(FONT_FAMILY, 10),
+            row.pack(fill="x", pady=3)
+            tk.Label(row, text=f"▸ {start_fmt}", font=(FONT_FAMILY, self.fs(12)),
                     bg=self.colors["widget_bg"], fg=get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"]),
                     width=14, anchor="w").pack(side="left")
-            tk.Label(row, text=summary, font=(FONT_FAMILY, 10),
+            tk.Label(row, text=summary, font=(FONT_FAMILY, self.fs(12)),
                     bg=self.colors["widget_bg"], fg=self.colors["text"],
                     anchor="w").pack(side="left")
 
@@ -786,7 +881,7 @@ class CalendarWidget(BaseWidget):
 
     def _set_status(self, msg: str):
         self._clear()
-        tk.Label(self.list_frame, text=msg, font=(FONT_FAMILY, 10),
+        tk.Label(self.list_frame, text=msg, font=(FONT_FAMILY, self.fs(13)),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
                 justify="left", anchor="w").pack(fill="x")
 
@@ -804,15 +899,17 @@ class StockCryptoWidget(BaseWidget):
         icon = "₿" if self._type == "crypto" else "📈"
         self.header(icon, "PRICE")
 
+        tk.Frame(self.inner, bg=self.colors["widget_bg"]).pack(fill="both", expand=True)
+
         self.lbl_name = tk.Label(
             self.inner,
             text=f"{self._sym} — {self._name}",
-            font=(FONT_FAMILY, 12 if self.big else 10, "bold"),
+            font=(FONT_FAMILY, self.fs(14 if self.big else 12), "bold"),
             bg=self.colors["widget_bg"], fg=get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"]),
         )
         self.lbl_name.pack(pady=(2, 0))
 
-        price_fs = 42 if self.big else 24
+        price_fs = self.fs(38 if self.big else 26)
         self.lbl_price = tk.Label(
             self.inner, text="-- USD",
             font=(FONT_FAMILY, price_fs, "bold"),
@@ -822,7 +919,7 @@ class StockCryptoWidget(BaseWidget):
 
         self.lbl_change = tk.Label(
             self.inner, text="",
-            font=(FONT_FAMILY, 12 if self.big else 10),
+            font=(FONT_FAMILY, self.fs(14 if self.big else 12)),
             bg=self.colors["widget_bg"], fg=self.colors["muted"],
         )
         self.lbl_change.pack()
@@ -830,47 +927,47 @@ class StockCryptoWidget(BaseWidget):
         if self.big:
             self.lbl_meta = tk.Label(
                 self.inner, text="",
-                font=(FONT_FAMILY, 10),
+                font=(FONT_FAMILY, self.fs(12)),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
             )
             self.lbl_meta.pack(pady=(4, 0))
+
+        tk.Frame(self.inner, bg=self.colors["widget_bg"]).pack(fill="both", expand=True)
 
     def fetch_data(self):
         if not HAS_REQUESTS:
             return
         try:
-            if self._type == "crypto":
-                self._fetch_crypto()
+            r = requests.get(
+                f"{SERVER_URL}/finance/price",
+                params={
+                    "type": self._type,
+                    "symbol": self._sym,
+                    "name": self._name,
+                },
+                timeout=10,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                price = data.get("price")
+                if price is None:
+                    err = (data.get("error") or "No data")[:40]
+                    self.ui(lambda: self._show_error(err, price_text="Unavailable"))
+                    return
+                self.ui(lambda: self._show_price(price, data.get("change") or 0, data.get("marketCap")))
             else:
-                self._fetch_stock()
+                try:
+                    err = r.json().get("error", f"HTTP {r.status_code}")
+                except Exception:
+                    err = f"HTTP {r.status_code}"
+                self.ui(lambda: self._show_error(err[:40]))
+        except requests.exceptions.ConnectionError:
+            self.ui(lambda: self._show_error("→ Start server.py", price_text="Server off"))
         except Exception as exc:
-            self.lbl_price.config(text="Error")
-            self.lbl_change.config(text=str(exc)[:40], fg=self.colors["muted"])
+            err = str(exc)[:40]
+            self.ui(lambda: self._show_error(err))
 
-    def _fetch_crypto(self):
-        sym_lower = self._sym.lower()
-        r = requests.get(
-            "https://api.coingecko.com/api/v3/simple/price",
-            params={
-                "ids": sym_lower,
-                "vs_currencies": "usd",
-                "include_24hr_change": "true",
-                "include_market_cap": "true",
-            },
-            timeout=10,
-        )
-        r.raise_for_status()
-        data = r.json()
-
-        coin_data = data.get(sym_lower) or (list(data.values())[0] if data else {})
-        if not coin_data:
-            self.lbl_price.config(text="Not found")
-            return
-
-        price = coin_data.get("usd", 0)
-        change = coin_data.get("usd_24h_change", 0)
-        mcap = coin_data.get("usd_market_cap", 0)
-
+    def _show_price(self, price, change, mcap):
         self.lbl_price.config(text=f"${price:,.2f}")
         sign = "+" if change >= 0 else ""
         color = self.colors["positive"] if change >= 0 else self.colors["negative"]
@@ -878,39 +975,9 @@ class StockCryptoWidget(BaseWidget):
         if self.big and hasattr(self, "lbl_meta") and mcap:
             self.lbl_meta.config(text=f"Market Cap: ${mcap:,.0f}")
 
-    def _fetch_stock(self):
-        try:
-            from dotenv import dotenv_values
-            here = os.path.dirname(os.path.abspath(__file__))
-            env = dotenv_values(os.path.join(here, ".env"))
-            api_key = env.get("ALPHA_VANTAGE_API_KEY")
-        except ImportError:
-            api_key = None
-
-        if api_key:
-            r = requests.get(
-                "https://www.alphavantage.co/query",
-                params={
-                    "function": "GLOBAL_QUOTE",
-                    "symbol": self._sym,
-                    "apikey": api_key,
-                },
-                timeout=10,
-            )
-            r.raise_for_status()
-            q = r.json().get("Global Quote", {})
-            price = float(q.get("05. price", 0) or 0)
-            change = float(q.get("10. change percent", "0%").replace("%", "") or 0)
-            self.lbl_price.config(text=f"${price:,.2f}")
-            sign = "+" if change >= 0 else ""
-            color = self.colors["positive"] if change >= 0 else self.colors["negative"]
-            self.lbl_change.config(text=f"{sign}{change:.2f}%", fg=color)
-        else:
-            self.lbl_price.config(text=f"{self._sym}")
-            self.lbl_change.config(
-                text="Alpha Vantage Key missing in .env\n→ Open in browser",
-                fg=self.colors["muted"],
-            )
+    def _show_error(self, message, price_text="Error"):
+        self.lbl_price.config(text=price_text)
+        self.lbl_change.config(text=message, fg=self.colors["muted"])
 
 
 class NotificationsWidget(BaseWidget):
@@ -929,50 +996,132 @@ class NotificationsWidget(BaseWidget):
         try:
             r = requests.get(f"{SERVER_URL}/notifications/messages", timeout=8)
             if r.status_code == 401:
-                self._set_status("Gmail not connected.\nPlease connect in Settings.")
+                self.ui(lambda: self._set_status("Gmail not connected.\nPlease connect in Settings."))
                 return
             if r.status_code == 403:
-                self._set_status("No Gmail permission.\nPlease reconnect your account.")
+                self.ui(lambda: self._set_status("No Gmail permission.\nPlease reconnect your account."))
                 return
             if r.status_code != 200:
-                self._set_status(f"Server error: {r.status_code}")
+                self.ui(lambda: self._set_status(f"Server error: {r.status_code}"))
                 return
             messages = r.json().get("messages", [])
-            self._render_messages(messages)
+            self.ui(lambda: self._render_messages(messages))
         except requests.exceptions.ConnectionError:
-            self._set_status("Server not reachable.\n→ Start server.py")
+            self.ui(lambda: self._set_status("Server not reachable.\n→ Start server.py"))
         except Exception as exc:
-            self._set_status(f"Error: {str(exc)[:50]}")
+            err = str(exc)[:50]
+            self.ui(lambda: self._set_status(f"Error: {err}"))
+
+    def _row_linespace(self, size):
+        return tkfont.Font(family=FONT_FAMILY, size=size).metrics("linespace")
+
+    def _max_messages(self):
+        """Fallback row budget when the window isn't laid out yet.
+
+        Normally _trim_overflow clamps the list to the card's real height, so
+        this is only used before the first layout pass. The old fixed cap
+        (3 normal / 6 big) left big cards half empty; the server only sends
+        10 messages, so there's never a point rendering more.
+        """
+        if not self.card_h_px:
+            return 6 if self.big else 3
+        row_h = 2 * self._row_linespace(self.fs(11)) + 10
+        available = self.card_h_px - 24 - (self._row_linespace(self.fs(12)) + 20)
+        return max(1, min(int(available / row_h), 10))
 
     def _render_messages(self, messages):
         self._clear()
-        max_msg = 6 if self.big else 3
         if not messages:
             self._set_status("No new messages")
             return
-        for msg in messages[:max_msg]:
-            is_unread = msg.get("unread", False)
-            row = tk.Frame(self.list_frame, bg=self.colors["widget_bg"])
-            row.pack(fill="x", pady=2)
+        # Render everything the server sent, then clamp to what really fits.
+        for msg in messages[:10]:
+            self._append_row(msg)
+        self.list_frame.update_idletasks()
+        self._trim_overflow()
+        # Re-layout after rows were dropped, so the fit below measures the
+        # labels at their final sizes.
+        self.list_frame.update_idletasks()
+        self._fit_labels()
 
-            dot_color = self.colors["accent"] if is_unread else self.colors["muted"]
-            tk.Label(row, text="●" if is_unread else "○",
-                    font=(FONT_FAMILY, 10), bg=self.colors["widget_bg"],
-                    fg=dot_color, width=2).pack(side="left")
+    def _append_row(self, msg):
+        is_unread = msg.get("unread", False)
+        row = tk.Frame(self.list_frame, bg=self.colors["widget_bg"])
+        row.pack(fill="x", pady=2)
 
-            info = tk.Frame(row, bg=self.colors["widget_bg"])
-            info.pack(side="left", fill="x", expand=True)
+        dot_color = self.colors["accent"] if is_unread else self.colors["muted"]
+        tk.Label(row, text="●" if is_unread else "○",
+                font=(FONT_FAMILY, self.fs(12)), bg=self.colors["widget_bg"],
+                fg=dot_color, width=2).pack(side="left")
 
-            from_str = (msg.get("from") or "")[:28]
-            subj_str = (msg.get("subject") or "(no subject)")[:38]
+        info = tk.Frame(row, bg=self.colors["widget_bg"])
+        info.pack(side="left", fill="x", expand=True)
 
-            tk.Label(info, text=from_str, font=(FONT_FAMILY, 9, "bold"),
-                    bg=self.colors["widget_bg"],
-                    fg=self.colors["text"] if is_unread else self.colors["muted"],
-                    anchor="w").pack(fill="x")
-            tk.Label(info, text=subj_str, font=(FONT_FAMILY, 9),
-                    bg=self.colors["widget_bg"], fg=self.colors["muted"],
-                    anchor="w").pack(fill="x")
+        row.lbl_from = tk.Label(info, text=msg.get("from") or "(unknown sender)",
+                font=(FONT_FAMILY, self.fs(11), "bold"),
+                bg=self.colors["widget_bg"],
+                fg=self.colors["text"] if is_unread else self.colors["muted"],
+                anchor="w")
+        row.lbl_from.pack(fill="x")
+        row.lbl_subj = tk.Label(info, text=msg.get("subject") or "(no subject)",
+                font=(FONT_FAMILY, self.fs(11)),
+                bg=self.colors["widget_bg"], fg=self.colors["muted"],
+                anchor="w")
+        row.lbl_subj.pack(fill="x")
+        return row
+
+    def _trim_overflow(self):
+        """Drop rows that would extend past the card's visible height."""
+        avail = self.list_frame.winfo_height()
+        if avail <= 1:
+            # Not laid out yet — fall back to the height estimate.
+            while len(self.list_frame.winfo_children()) > self._max_messages():
+                self.list_frame.winfo_children()[-1].destroy()
+            return
+        rows = self.list_frame.winfo_children()
+        total = sum(r.winfo_reqheight() for r in rows)
+        while rows and total > avail:
+            rows[-1].destroy()
+            rows = self.list_frame.winfo_children()
+            total = sum(r.winfo_reqheight() for r in rows)
+
+    def _fit_labels(self):
+        """Truncate sender/subject to the card width (ellipsis if needed).
+
+        The sender keeps its email address intact whenever possible: if
+        "Name <address>" is too wide, only "<address>" is shown, so it never
+        looks like a broken/partial address.
+        """
+        for row in self.list_frame.winfo_children():
+            self._fit_one(row.lbl_from, keep_tail=True)
+            self._fit_one(row.lbl_subj)
+
+    def _fit_one(self, label, keep_tail=False):
+        text = label.cget("text")
+        width = label.winfo_width()
+        if not text or width <= 1:
+            return
+        font = tkfont.Font(font=label.cget("font"))
+        if font.measure(text) <= width:
+            return
+        if keep_tail:
+            lt = text.rfind("<")
+            gt = text.rfind(">")
+            if 0 < lt < gt:
+                addr = text[lt:gt + 1]
+                if font.measure(addr) <= width:
+                    label.config(text=addr)
+                    return
+        # Longest prefix that fits together with an ellipsis.
+        ell = "…"
+        lo, hi = 0, len(text)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if font.measure(text[:mid] + ell) <= width:
+                lo = mid
+            else:
+                hi = mid - 1
+        label.config(text=text[:lo] + ell)
 
     def _clear(self):
         for w in self.list_frame.winfo_children():
@@ -980,7 +1129,7 @@ class NotificationsWidget(BaseWidget):
 
     def _set_status(self, msg: str):
         self._clear()
-        tk.Label(self.list_frame, text=msg, font=(FONT_FAMILY, 10),
+        tk.Label(self.list_frame, text=msg, font=(FONT_FAMILY, self.fs(13)),
                 bg=self.colors["widget_bg"], fg=self.colors["muted"],
                 justify="left", anchor="w").pack(fill="x")
 
@@ -1008,14 +1157,16 @@ class CountdownWidget(BaseWidget):
                 or "Event"
             )
 
+        tk.Frame(self.inner, bg=self.colors["widget_bg"]).pack(fill="both", expand=True)
+
         self.lbl_event = tk.Label(
             self.inner, text=self._label_text,
-            font=(FONT_FAMILY, 14 if self.big else 11),
+            font=(FONT_FAMILY, self.fs(16 if self.big else 13)),
             bg=self.colors["widget_bg"], fg=get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"]),
         )
         self.lbl_event.pack(pady=(4, 0))
 
-        cd_fs = 32 if self.big else 20
+        cd_fs = self.fs(30 if self.big else 22)
         self.lbl_cd = tk.Label(
             self.inner, text="-- days",
             font=(FONT_FAMILY, cd_fs, "bold"),
@@ -1025,10 +1176,12 @@ class CountdownWidget(BaseWidget):
 
         self.lbl_date = tk.Label(
             self.inner, text="",
-            font=(FONT_FAMILY, 10),
+            font=(FONT_FAMILY, self.fs(12)),
             bg=self.colors["widget_bg"], fg=self.colors["muted"],
         )
         self.lbl_date.pack()
+
+        tk.Frame(self.inner, bg=self.colors["widget_bg"]).pack(fill="both", expand=True)
 
         if not self._target_date:
             self.lbl_cd.config(text="No date set")
@@ -1037,6 +1190,8 @@ class CountdownWidget(BaseWidget):
             self._tick()
 
     def _tick(self):
+        if not self._alive:
+            return
         try:
             target = datetime.fromisoformat(self._target_date)
         except ValueError:
@@ -1076,12 +1231,115 @@ WIDGET_CLASSES = {
 }
 
 
-def make_widget(parent, key, colors, big, settings):
+def make_widget(parent, key, colors, big, settings, scale=1.0, card_h_px=None):
     cls = WIDGET_CLASSES.get(key)
     if cls:
-        return cls(parent, colors, big=big, settings=settings)
-    tk.Label(parent, text=f"[{key}]", font=(FONT_FAMILY, 12),
-            bg=colors["widget_bg"], fg=colors["muted"]).pack()
+        return cls(parent, colors, big=big, settings=settings, scale=scale, card_h_px=card_h_px)
+    return None  # unknown keys simply don't render; the caller skips them
+
+
+# --- Widget layout (free-form, Windows-11-style) --------------------------
+#
+# Settings carry a "widgetLayout" object:
+#   { "preset": "twoUnequal" | "quadrants" | "threeColumns" | "threeUnequal",
+#     "cells": { "weather": {"x": 0, "y": 0, "w": 45, "h": 100}, ... } }
+# Each enabled widget has a rectangle in percent of the dashboard area and
+# can be moved/resized freely (no snapping). Only enabled widgets are
+# placed, so there are never empty cards.
+
+LAYOUT_PRESETS = {"twoUnequal", "quadrants", "threeColumns", "threeUnequal"}
+
+
+def auto_layout(preset, keys):
+    """Default rectangles (x, y, w, h in percent) for the given widgets."""
+    keys = list(keys)
+    n = len(keys)
+    cells = {}
+
+    if preset == "twoUnequal":
+        # First widget: tall left column. Rest: stacked on the right.
+        if n:
+            cells[keys[0]] = {"x": 0.0, "y": 0.0, "w": 45.0, "h": 100.0}
+        nrows = max(1, n - 1)
+        for i, key in enumerate(keys[1:]):
+            cells[key] = {"x": 46.0, "y": 100.0 * i / nrows, "w": 54.0, "h": 100.0 / nrows}
+    elif preset in ("threeColumns", "threeUnequal"):
+        cols = [33.0, 33.0, 34.0] if preset == "threeColumns" else [25.0, 45.0, 30.0]
+        nrows = max(1, math.ceil(n / 3))
+        for i, key in enumerate(keys):
+            cx = sum(cols[: i % 3])
+            cells[key] = {"x": cx, "y": 100.0 * (i // 3) / nrows, "w": cols[i % 3], "h": 100.0 / nrows}
+    else:  # quadrants: 2x2, grows by adding rows of two
+        nrows = max(2, math.ceil(n / 2))
+        for i, key in enumerate(keys):
+            cells[key] = {"x": (i % 2) * 50.0, "y": 100.0 * (i // 2) / nrows, "w": 50.0, "h": 100.0 / nrows}
+    return cells
+
+
+# Approximate content height (px) of each widget at scale 1.0. Used to cap
+# font scaling by the card's real height, so text never gets taller than the
+# card that contains it (area-based scaling alone inflates fonts on
+# wide-but-short cards and clips them).
+NATURAL_HEIGHT = {
+    "weather": 125,
+    "dateTime": 120,
+    "stockCrypto": 135,
+    "notifications": 135,
+    "calendar": 150,
+    "countdown": 125,
+}
+BIG_EXTRA_HEIGHT = 75  # featured cards (taller than half the screen) show extra rows
+
+
+def resolve_widget_layout(enabled_keys, layout):
+    """Return validated free-form rectangles for the enabled widgets.
+
+    Uses the saved layout when consistent (also converting legacy grid-format
+    cells); otherwise falls back to the preset's auto layout.
+    """
+    layout = layout or {}
+    preset = layout.get("preset") or "twoUnequal"
+    if preset not in LAYOUT_PRESETS:
+        preset = "twoUnequal"
+    cells = layout.get("cells") or {}
+
+    columns = [float(v) for v in (layout.get("columns") or []) if isinstance(v, (int, float)) and v > 0]
+    rows = [float(v) for v in (layout.get("rows") or []) if isinstance(v, (int, float)) and v > 0]
+
+    rects = {}
+    valid = True
+    for key in enabled_keys:
+        cell = cells.get(key)
+        if not cell:
+            continue
+        if all(k in cell for k in ("x", "y", "w", "h")):
+            x, y, w, h = (float(cell[k]) for k in ("x", "y", "w", "h"))
+        elif all(k in cell for k in ("c", "r", "cs", "rs")) and columns and rows:
+            # Legacy grid format -> rectangles
+            ncols, nrows = len(columns), len(rows)
+            col_total = sum(columns)
+            row_total = sum(rows)
+            c, r = int(cell["c"]), int(cell["r"])
+            cs = max(1, int(cell.get("cs", 1)))
+            rs = max(1, int(cell.get("rs", 1)))
+            if c < 0 or r < 0 or c + cs > ncols or r + rs > nrows:
+                valid = False
+                break
+            x = sum(columns[:c]) / col_total * 100.0
+            w = sum(columns[c:c + cs]) / col_total * 100.0
+            y = sum(rows[:r]) / row_total * 100.0
+            h = sum(rows[r:r + rs]) / row_total * 100.0
+        else:
+            valid = False
+            break
+        if w <= 0 or h <= 0 or x < -0.01 or y < -0.01 or x + w > 100.01 or y + h > 100.01:
+            valid = False
+            break
+        rects[key] = {"x": x, "y": y, "w": w, "h": h}
+
+    if not valid or any(k not in rects for k in enabled_keys):
+        return auto_layout(preset, enabled_keys)
+    return rects
 
 
 class Dashboard(tk.Tk):
@@ -1089,14 +1347,41 @@ class Dashboard(tk.Tk):
         super().__init__()
         self.settings = load_settings()
         self.colors = extract_colors(self.settings)
+        self._widgets = []
+        self._settings_mtime = settings_file_mtime()
 
         self._setup_window()
         self._build_ui()
+        self._watch_settings()
+
+    def _watch_settings(self):
+        """Hot-reload: when settings.json changes (e.g. "Save Settings" on the
+        website), rebuild the dashboard with the new settings within ~1 second."""
+        mtime = settings_file_mtime()
+        if mtime is not None and mtime != self._settings_mtime:
+            self._settings_mtime = mtime
+            new_settings = load_settings()
+            if new_settings and new_settings != self.settings:
+                self.settings = new_settings
+                self.colors = extract_colors(new_settings)
+                self.configure(bg=self.colors["bg"])
+                self._build_ui()
+        self.after(1000, self._watch_settings)
 
     def _setup_window(self):
         self.title("Dashboard")
         self.configure(bg=self.colors["bg"])
         self.attributes("-fullscreen", True)
+
+        # Taskbar / title-bar icon (keeps a reference so the image isn't GC'd).
+        self._icon_ref = None
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favicon.png")
+        if os.path.exists(icon_path):
+            try:
+                self._icon_ref = tk.PhotoImage(file=icon_path)
+                self.iconphoto(True, self._icon_ref)
+            except tk.TclError:
+                self._icon_ref = None
 
         self.bind("<Escape>", lambda e: self.attributes("-fullscreen", False))
         self.bind("<F11>", lambda e: self.attributes("-fullscreen", True))
@@ -1113,49 +1398,87 @@ class Dashboard(tk.Tk):
     def _build_ui(self):
         c = self.colors
         widgets_en = self.settings.get("widgets") or {}
-        starred_id = self.settings.get("starredWidget", "")
-        starred_key = STAR_MAP.get(starred_id, "dateTime")
 
+        # Only enabled widgets are rendered — disabled ones leave no empty card.
         enabled = [k for k, v in widgets_en.items() if v]
         if not enabled:
             enabled = ["dateTime"]
-        if starred_key not in enabled:
-            starred_key = enabled[0]
 
-        secondary = [k for k in enabled if k != starred_key][:2]
+        # Respect the widget order chosen in Settings -> Align Widgets
+        # (unknown/disabled entries are ignored, new widgets get appended).
+        order = self.settings.get("widgetOrder") or []
+        ordered = [k for k in order if k in enabled] + [k for k in enabled if k not in order]
+        enabled = ordered
 
-        root_frame = tk.Frame(self, bg=c["bg"])
-        root_frame.pack(fill="both", expand=True, padx=22, pady=18)
+        # Stop old widgets (kills their refresh threads and pending ticks)
+        # and clear the previous build when hot-reloading.
+        for widget in self._widgets:
+            widget.destroy()
+        self._widgets = []
 
-        self._build_header(root_frame)
+        if not hasattr(self, "root_frame"):
+            self.root_frame = tk.Frame(self, bg=c["bg"])
+            self.root_frame.pack(fill="both", expand=True, padx=22, pady=18)
+        else:
+            self.root_frame.configure(bg=c["bg"])
+            for child in self.root_frame.winfo_children():
+                child.destroy()
 
-        content = tk.Frame(root_frame, bg=c["bg"])
+        self._build_header(self.root_frame)
+
+        content = tk.Frame(self.root_frame, bg=c["bg"])
         content.pack(fill="both", expand=True, pady=(14, 0))
 
-        sidebar = tk.Frame(content, bg=c["bg"], width=320)
-        sidebar.pack(side="left", fill="y", padx=(0, 16))
-        sidebar.pack_propagate(False)
+        # Free-form layout: each widget is a rectangle in percent of the
+        # content area, placed with `place` (no grid snapping). A small inset
+        # leaves a gap between the cards.
+        rects = resolve_widget_layout(enabled, self.settings.get("widgetLayout"))
+        margin = 0.006
 
-        main_area = tk.Frame(content, bg=c["bg"])
-        main_area.pack(side="right", fill="both", expand=True)
+        # Estimate the content area height in pixels so font scaling can be
+        # capped by each card's real height (see NATURAL_HEIGHT above).
+        content_h_px = max(200, self.winfo_screenheight() - 145)
 
-        for key in secondary:
-            make_widget(sidebar, key, c, big=False, settings=self.settings)
+        for key in enabled:
+            rect = rects.get(key)
+            if rect is None:
+                continue
 
-        make_widget(main_area, starred_key, c, big=True, settings=self.settings)
+            # Tall cards (more than half the height) are the "featured" ones.
+            big = rect["h"] > 50
 
-        self._build_footer(root_frame)
+            # Scale fonts to the card's footprint so the content fills the
+            # card instead of leaving most of it empty — but never taller than
+            # the card itself.
+            area_frac = (rect["w"] / 100.0) * (rect["h"] / 100.0)
+            scale = (area_frac / 0.10) ** 0.5
+            card_h_px = content_h_px * rect["h"] / 100.0
+            # 10% headroom on the estimate so padding never clips the last row.
+            natural = (NATURAL_HEIGHT.get(key, 150) + (BIG_EXTRA_HEIGHT if big else 0)) * 1.10
+            scale = max(0.8, min(scale, card_h_px / natural, 2.6))
+            widget = make_widget(content, key, c, big=big, settings=self.settings, scale=scale, card_h_px=card_h_px)
+            if widget is None:
+                continue
+
+            widget.container_frame.place(
+                relx=rect["x"] / 100.0 + margin,
+                rely=rect["y"] / 100.0 + margin,
+                relwidth=rect["w"] / 100.0 - 2 * margin,
+                relheight=rect["h"] / 100.0 - 2 * margin,
+            )
+            self._widgets.append(widget)
+
+        self._build_footer(self.root_frame)
 
     def _build_header(self, parent):
         c = self.colors
         hdr = tk.Frame(parent, bg=c["bg"])
-        hdr.pack(fill="x")
+        hdr.pack(fill="x", pady=(2, 6))
 
         # Kontrastbewusste Textfarbe für Dashboard-Titel
         bg_color = c["bg"]
         accent_color = c["accent"]
         header_text_color = get_contrast_aware_text_color(bg_color, accent_color)
-
 
         tk.Label(
             hdr,
@@ -1164,28 +1487,18 @@ class Dashboard(tk.Tk):
             bg=c["bg"], fg=header_text_color,
         ).pack(side="left")
 
-        self._hdr_clock = tk.Label(
-            hdr, text="",
-            font=(FONT_FAMILY, 14, "bold"),
-            bg=c["bg"], fg=header_text_color,
-        )
-        self._hdr_clock.pack(side="right", padx=(0, 4))
-        self._tick_header()
-        tk.Frame(parent, height=2, bg=c["border"]).pack(fill="x", pady=(4, 0))
-
-    def _tick_header(self):
-        self._hdr_clock.config(text=datetime.now().strftime("%H:%M:%S"))
-        self.after(1000, self._tick_header)
+        # Accent rule under the header
+        tk.Frame(parent, height=2, bg=accent_color).pack(fill="x", pady=(2, 0))
 
     def _build_footer(self, parent):
         c = self.colors
-        tk.Frame(parent, height=1, bg=self.colors["border"]).pack(fill="x", pady=(6, 4))
+        tk.Frame(parent, height=1, bg=self.colors["border"]).pack(fill="x", pady=(8, 5))
         footer = tk.Frame(parent, bg=c["bg"])
         footer.pack(fill="x")
 
         tk.Label(
             footer,
-            text="ESC Exit fullscreen F11 Fullscreen R Reload Q Quit",
+            text="ESC  exit fullscreen   •   F11  fullscreen   •   R  reload   •   Q  quit",
             font=(FONT_FAMILY, 9),
             bg=c["bg"], fg=c["muted"],
         ).pack(side="left")
