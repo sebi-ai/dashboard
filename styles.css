@@ -116,7 +116,7 @@ h1, h2, h3, h4, h5, h6, button {
   }
 }
 
-/* Settings page: center the heading and intro, keep the Save button centered. */
+
 body:has(#settings-sections) #settings-heading {
   text-align: center;
 }
@@ -167,7 +167,7 @@ input[type="checkbox"] {
   width: 20px !important;
   height: 20px !important;
   cursor: pointer;
-  accent-color: rgb(0, 2, 131); 
+  accent-color: rgb(0, 2, 131);
 }
 
 #widgets-list {
@@ -292,7 +292,7 @@ input, textarea {
 }
 
 select {
-  appearance: none; 
+  appearance: none;
   background-color: #ffffff;
   border: 2px solid rgb(0, 2, 131);
   border-radius: 8px;
@@ -312,7 +312,7 @@ select:focus {
 option {
   background-color: white;
   color:rgba(0, 11, 97, 0.72);
-  padding: 8px; 
+  padding: 8px;
 }
 
 option:checked {
@@ -380,7 +380,7 @@ input[type="color"]::-moz-color-swatch    { border: none; border-radius: 8px; }
   from {
     opacity: 0;
     transform: translateY(-10px);
-  } 
+  }
   to {
     opacity: 1;
     transform: translateY(0);
@@ -418,16 +418,16 @@ input[type="color"]::-moz-color-swatch    { border: none; border-radius: 8px; }
     display: block;
 }
 
-.site-notification--success { 
+.site-notification--success {
 border-color: rgb(0, 2, 131);
 }
 
-.site-notification--error   { 
+.site-notification--error   {
 border-color: rgb(0, 2, 131);
 }
 
 .site-notification--info    {
-border-color: rgb(0, 2, 131); 
+border-color: rgb(0, 2, 131);
 }
 
 #countdown-window {
@@ -506,8 +506,8 @@ border-color: rgb(0, 2, 131);
     max-width: 90vw;
     max-height: 80vh;
     overflow-y: auto;
-    background: rgba(255, 255, 255, 0.8); 
-    backdrop-filter: blur(12px);  
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
 }
 
 #stock-crypto-suggestions {
@@ -622,7 +622,7 @@ body.modal-open > :not(#countdown-window):not(#calendar-window):not(#notificatio
 #notifications-window,
 #stock-crypto-window {
   z-index: 1001;
-} 
+}
 
 #menu-logo {
   width: 48px;
@@ -662,7 +662,7 @@ body:has(#settings-sections) {
 #settings-dropdown {
   display: none;
   position: absolute;
-  top: 0;          
+  top: 0;
   left: 0;
   flex-direction: column;
   align-items: stretch;

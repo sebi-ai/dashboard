@@ -36,9 +36,7 @@ const WIDGET_KEY_TO_LABEL = {
   stockCrypto: "Stock/Crypto Prices",
 };
 
-// Google Calendar + Gmail are connected through the local server (server.py).
-// The server owns the OAuth flow and stores the tokens in settings.json, so
-// both this website and the Python dashboard (dashboard.py) can use them.
+
 async function startGoogleConnect() {
  if (window.location.protocol === 'file:') {
  showNotification('ERROR: Open via http://localhost:8000, not by double-clicking the file!', 'error');
@@ -69,7 +67,7 @@ async function disconnectGoogle() {
  try {
  await fetch(`${API_BASE}/calendar/disconnect`, { method: 'POST' });
  } catch (e) {
- // The token is removed server-side; ignore network errors here.
+
  }
  showNotification('Google account disconnected.');
  refreshCalendarStatus();
@@ -186,8 +184,8 @@ async function loadMessages() {
  return;
  }
  messages.forEach(msg => {
- // Build with text nodes, not innerHTML: email subjects/senders are
- // attacker-controlled and must never be parsed as HTML.
+
+
  const li = document.createElement("li");
  const subject = document.createElement("strong");
  subject.textContent = msg.subject || "(no subject)";
@@ -239,8 +237,7 @@ async function loadSettings() {
     }
   }
 
- // Restore the saved countdown date, otherwise opening Settings and pressing
- // Save silently wipes the date (the input would be sent back as "").
+
  if (s.countdownDate) document.getElementById("countdown-date").value = s.countdownDate;
 
  if (s.widgetLayout) {
@@ -377,22 +374,14 @@ if (themeModePreset && themeModeCustom && themeSelect && customColorInput) {
  themeSelect.disabled = themeModeCustom.checked;
  customColorInput.disabled = themeModePreset.checked;
  });
-}// --- Free-form "Align Widgets" editor --------------------------------------
-//
-// The dashboard is laid out with free-form rectangles (percent of the area).
-// The editor is a mini-map: drag a card by its body to MOVE it, and pull a
-// corner handle to RESIZE it — fully continuous, no snapping. When a card
-// grows into another, the other card is pushed out of the way (and shrinks
-// against the wall if needed) so everything always fits on screen.
-// Everything updates live from the checkboxes above, even before saving.
+}
+
 
 let layoutState = { cells: {} };
 
-const MIN_CARD = 20;    // minimum card size in percent (content must stay readable)
-// Every OTHER card must stay at least this big after a move/resize. Must be
-// <= MIN_CARD: if it were larger, a card resized down to its minimum would
-// make every subsequent move/resize fail its constraint check and freeze the
-// whole layout.
+const MIN_CARD = 20;
+
+
 const MIN_VISIBLE = MIN_CARD;
 
 function activeWidgetKeys() {
@@ -409,7 +398,7 @@ function autoLayoutCells(preset, keys) {
     return cells;
   }
   if (preset === "twoUnequal") {
-    // First widget: tall left column. Rest: stacked on the right.
+
     if (n) cells[keys[0]] = { x: 0, y: 0, w: 45, h: 100 };
     const nrows = Math.max(1, n - 1);
     keys.slice(1).forEach((k, i) => {
@@ -423,7 +412,7 @@ function autoLayoutCells(preset, keys) {
       cells[k] = { x: cx, y: (100 * Math.floor(i / 3)) / nrows, w: cols[i % 3], h: 100 / nrows };
     });
   } else {
-    // quadrants: 2x2, grows by adding rows of two
+
     const nrows = Math.max(2, Math.ceil(n / 2));
     keys.forEach((k, i) => {
       cells[k] = { x: (i % 2) * 50, y: (100 * Math.floor(i / 2)) / nrows, w: 50, h: 100 / nrows };
@@ -432,8 +421,7 @@ function autoLayoutCells(preset, keys) {
   return cells;
 }
 
-// 0.01% of the map — tolerates the tiny float slivers that reflow math
-// (push/shrink/fillGaps) leaves between cards that are supposed to touch.
+
 const EPS = 0.01;
 
 function rectsOverlap(a, b) {
@@ -450,18 +438,14 @@ function clampRect(r) {
   if (r.y + r.h > 100) r.y = 100 - r.h;
 }
 
-// Shrink `victim` out of `blocker` as a last resort: keep the largest strip of
-// the victim that does not touch the blocker and is at least MIN_CARD in both
-// dimensions. Returns true if the victim moved. If nothing qualifies the
-// victim keeps its size — the drag cap (fitsOthers) rejects such positions
-// anyway, so a card can never be shrunk into an invisible sliver.
+
 function shrinkOut(blocker, victim) {
   const b = blocker, v = victim;
   const strips = [];
-  if (b.y > v.y) strips.push({ y: v.y, h: b.y - v.y });                                 // top strip
-  if (v.y + v.h > b.y + b.h) strips.push({ y: b.y + b.h, h: v.y + v.h - (b.y + b.h) }); // bottom strip
-  if (b.x > v.x) strips.push({ x: v.x, w: b.x - v.x });                                 // left strip
-  if (v.x + v.w > b.x + b.w) strips.push({ x: b.x + b.w, w: v.x + v.w - (b.x + b.w) }); // right strip
+  if (b.y > v.y) strips.push({ y: v.y, h: b.y - v.y });
+  if (v.y + v.h > b.y + b.h) strips.push({ y: b.y + b.h, h: v.y + v.h - (b.y + b.h) });
+  if (b.x > v.x) strips.push({ x: v.x, w: b.x - v.x });
+  if (v.x + v.w > b.x + b.w) strips.push({ x: b.x + b.w, w: v.x + v.w - (b.x + b.w) });
   let best = null;
   for (const s of strips) {
     const w = s.w !== undefined ? s.w : v.w;
@@ -481,15 +465,13 @@ function shrinkOut(blocker, victim) {
   return true;
 }
 
-// Push `victim` out of `blocker`. Tries directions in preference order
-// (down, right, up, left); the first one that fully resolves the overlap and
-// stays on the map wins. Returns true if the victim moved.
+
 function pushOut(blocker, victim) {
   const tries = [
-    { x: victim.x, y: blocker.y + blocker.h }, // down
-    { x: blocker.x + blocker.w, y: victim.y }, // right
-    { x: victim.x, y: blocker.y - victim.h },  // up
-    { x: blocker.x - victim.w, y: victim.y },  // left
+    { x: victim.x, y: blocker.y + blocker.h },
+    { x: blocker.x + blocker.w, y: victim.y },
+    { x: victim.x, y: blocker.y - victim.h },
+    { x: blocker.x - victim.w, y: victim.y },
   ];
   for (const t of tries) {
     if (t.x >= -0.001 && t.y >= -0.001 && t.x + victim.w <= 100.001 && t.y + victim.h <= 100.001 &&
@@ -502,16 +484,11 @@ function pushOut(blocker, victim) {
   return false;
 }
 
-// Push every card that overlaps the dragged card out of the way, cascading
-// through the whole layout (a pushed card can knock its own neighbours) until
-// everything fits, shrinking against the wall only as a last resort. The card
-// being dragged is never pushed or shrunk itself.
-// Works on a supplied cells map (defaults to the live layout) so it can be
-// simulated on a copy for constraint checks.
+
 function resolveOverlaps(moved, cells) {
   const map = cells || layoutState.cells;
   const others = Object.values(map).filter(c => c !== moved);
-  // Phase 1: cascade pushes.
+
   for (let pass = 0; pass < 20; pass++) {
     let changed = false;
     for (const b of others) {
@@ -524,9 +501,8 @@ function resolveOverlaps(moved, cells) {
     }
     if (!changed) break;
   }
-  // Phase 2: force-clean whatever still overlaps by shrinking the pushed card
-  // out of the blocker. Never shrinks the dragged card, never drops a card
-  // below MIN_CARD.
+
+
   for (let pass = 0; pass < 10; pass++) {
     let changed = false;
     for (const b of others) {
@@ -539,11 +515,8 @@ function resolveOverlaps(moved, cells) {
     }
     if (!changed) break;
   }
-  // Phase 3: a card that STILL overlaps cannot be pushed or shrunk where it
-  // is — relocate it (never the dragged card) to the largest genuinely free
-  // spot. This always terminates and leaves a clean layout whenever any
-  // usable free space exists, which is what keeps heavily-packed layouts from
-  // accumulating invisible overlaps.
+
+
   const allKeys = Object.keys(map);
   for (let pass = 0; pass < 6; pass++) {
     let changed = false;
@@ -568,9 +541,7 @@ function resolveOverlaps(moved, cells) {
   }
 }
 
-// After a card is moved or resized, expand every card (except the one the
-// user is actively dragging) into any empty space that was left behind, so
-// the layout always fills the screen and no dead gaps remain.
+
 function fillGaps(exceptKey, cells) {
   const map = cells || layoutState.cells;
   const keys = Object.keys(map).filter(k => k !== exceptKey);
@@ -579,8 +550,8 @@ function fillGaps(exceptKey, cells) {
     for (const key of keys) {
       const r = map[key];
       if (!r) continue;
-      // Expand downward: the nearest card that shares our horizontal span and
-      // starts below us limits how far we can grow.
+
+
       let maxBottom = 100;
       for (const o of Object.values(map)) {
         if (o === r) continue;
@@ -592,8 +563,8 @@ function fillGaps(exceptKey, cells) {
         r.h = maxBottom - r.y;
         changed = true;
       }
-      // Expand rightward: the nearest card that shares our vertical span and
-      // starts to the right of us limits how far we can grow.
+
+
       let maxRight = 100;
       for (const o of Object.values(map)) {
         if (o === r) continue;
@@ -605,8 +576,8 @@ function fillGaps(exceptKey, cells) {
         r.w = maxRight - r.x;
         changed = true;
       }
-      // Expand upward: the nearest card above us that shares our horizontal
-      // span limits how far we can grow.
+
+
       let minTop = 0;
       for (const o of Object.values(map)) {
         if (o === r) continue;
@@ -619,8 +590,8 @@ function fillGaps(exceptKey, cells) {
         r.y = minTop;
         changed = true;
       }
-      // Expand leftward: the nearest card to our left that shares our
-      // vertical span limits how far we can grow.
+
+
       let minLeft = 0;
       for (const o of Object.values(map)) {
         if (o === r) continue;
@@ -638,9 +609,7 @@ function fillGaps(exceptKey, cells) {
   }
 }
 
-// Interpolate the moving edges of a resize between the original rect and the
-// proposed rect, by fraction t in [0, 1]. Used to find the largest size that
-// still keeps every other card visible.
+
 function cornerLerp(orig, proposed, corner, t) {
   const r = {};
   r.x = orig.x + (proposed.x - orig.x) * t;
@@ -651,9 +620,7 @@ function cornerLerp(orig, proposed, corner, t) {
   return r;
 }
 
-// True if, with the dragged card at rect r, the whole map can settle cleanly:
-// no two cards overlap (a card under another one would be invisible), and
-// every OTHER card stays at least MIN_VISIBLE wide and tall.
+
 function fitsOthers(r, key) {
   const cells = {};
   for (const [k, v] of Object.entries(layoutState.cells)) cells[k] = { ...v };
@@ -672,9 +639,7 @@ function fitsOthers(r, key) {
   return true;
 }
 
-// Clamp a resize so the dragged card can never grow big enough to hide any
-// other card: binary-search between the original and proposed rects for the
-// largest size where every other card keeps at least MIN_VISIBLE.
+
 function capForOthers(proposed, key, orig, corner) {
   if (fitsOthers(proposed, key)) return proposed;
   let lo = 0;
@@ -688,11 +653,7 @@ function capForOthers(proposed, key, orig, corner) {
   return cornerLerp(orig, proposed, corner, lo);
 }
 
-// Largest empty axis-aligned rectangle on the map (used to place new widgets
-// when the regular 2xN slots are all taken, and to relocate cards that end up
-// stuck). Any maximal free rectangle has its edges flush against occupied
-// cards or the map border, so it is enough to check every candidate bounded
-// by those coordinates.
+
 function largestFreeRect(occupied) {
   const xs = [0, 100, ...occupied.map(r => r.x), ...occupied.map(r => r.x + r.w)];
   const ys = [0, 100, ...occupied.map(r => r.y), ...occupied.map(r => r.y + r.h)];
@@ -721,7 +682,7 @@ function largestFreeRect(occupied) {
 }
 
 function placeNewWidget(key, keys) {
-  // Newly-enabled widget goes into the first free spot of a 2xN grid.
+
   const existing = Object.values(layoutState.cells);
   const nrows = Math.max(2, Math.ceil(keys.length / 2));
   for (let r = 0; r < nrows; r++) {
@@ -733,15 +694,15 @@ function placeNewWidget(key, keys) {
       }
     }
   }
-  // Fall back to the largest genuinely free rectangle, so the new card is
-  // always visible and never covers an existing one.
+
+
   const free = largestFreeRect(existing);
   if (free) {
     layoutState.cells[key] = free;
     return;
   }
-  // The map is completely packed: reflow everything so the new widget can
-  // actually be seen. (Rare — the layout is saved as soon as the user edits.)
+
+
   layoutState.cells = autoLayoutCells("twoUnequal", keys);
 }
 
@@ -758,8 +719,7 @@ function syncLayoutWithWidgets(keys) {
   }
 }
 
-// DOM element for each enabled widget, so dragging can update styles directly
-// instead of rebuilding the whole editor on every pointermove.
+
 const layoutCellElements = new Map();
 
 function renderLayoutEditor() {
@@ -778,14 +738,12 @@ function renderLayoutEditor() {
 
   syncLayoutWithWidgets(keys);
 
-  // A newly-added widget can land on top of existing cards; push everything
-  // apart so no card is ever hidden behind another.
+
   if (keys.length > 1) {
     resolveOverlaps(layoutState.cells[keys[0]]);
   }
 
-  // Reconcile the DOM with the active widget set: remove cards for disabled
-  // widgets, create cards for newly enabled ones, keep the rest untouched.
+
   for (const [key, el] of layoutCellElements) {
     if (!keys.includes(key)) {
       el.remove();
@@ -799,7 +757,7 @@ function renderLayoutEditor() {
     el.dataset.key = key;
     el.textContent = WIDGET_KEY_TO_LABEL[key] || key;
 
-    // Windows-11-style corner resize handles (faint by default, full on hover).
+
     ["tl", "tr", "bl", "br"].forEach(corner => {
       const h = document.createElement("span");
       h.className = "layout-handle layout-handle-" + corner;
@@ -814,8 +772,7 @@ function renderLayoutEditor() {
   applyLayout();
 }
 
-// Update positions/sizes of the existing cards without rebuilding the DOM —
-// this is what keeps dragging and resizing smooth.
+
 function applyLayout() {
   for (const [key, el] of layoutCellElements) {
     const r = layoutState.cells[key];
@@ -827,7 +784,7 @@ function applyLayout() {
   }
 }
 
-// Normalize saved cells: keep free-form rects, convert legacy grid cells.
+
 function normalizeSavedCells(wl) {
   const cells = wl.cells || {};
   const columns = (wl.columns || []).filter(v => typeof v === "number" && v > 0);
@@ -859,7 +816,7 @@ function normalizeSavedCells(wl) {
   return out;
 }
 
-// Move a card freely by dragging its body.
+
 function startMove(cell, e) {
   e.preventDefault();
   e.stopPropagation();
@@ -870,7 +827,7 @@ function startMove(cell, e) {
   const startX = e.clientX;
   const startY = e.clientY;
   cell.classList.add("layout-moving");
-  try { map.setPointerCapture(e.pointerId); } catch (_) { /* not supported */ }
+  try { map.setPointerCapture(e.pointerId); } catch (_) {  }
 
   function onMove(ev) {
     const dx = ((ev.clientX - startX) / rect.width) * 100;
@@ -879,8 +836,8 @@ function startMove(cell, e) {
     proposed.x = orig.x + dx;
     proposed.y = orig.y + dy;
     clampRect(proposed);
-    // The dragged card must never end up covering another card: cap the
-    // position the same way a resize caps the size.
+
+
     const settled = capForOthers(proposed, key, orig, null);
     layoutState.cells[key] = settled;
     resolveOverlaps(settled);
@@ -889,7 +846,7 @@ function startMove(cell, e) {
   function onUp() {
     document.removeEventListener("pointermove", onMove);
     document.removeEventListener("pointerup", onUp);
-    try { map.releasePointerCapture(e.pointerId); } catch (_) { /* not supported */ }
+    try { map.releasePointerCapture(e.pointerId); } catch (_) {  }
     cell.classList.remove("layout-moving");
     fillGaps(key);
     renderLayoutEditor();
@@ -898,7 +855,7 @@ function startMove(cell, e) {
   document.addEventListener("pointerup", onUp);
 }
 
-// Free-form corner resize: pull a corner to any size, no snapping.
+
 function startCornerResize(cell, corner, e) {
   e.preventDefault();
   e.stopPropagation();
@@ -907,7 +864,7 @@ function startCornerResize(cell, corner, e) {
   const key = cell.dataset.key;
   const orig = { ...layoutState.cells[key] };
   cell.classList.add("layout-resizing");
-  try { map.setPointerCapture(e.pointerId); } catch (_) { /* not supported */ }
+  try { map.setPointerCapture(e.pointerId); } catch (_) {  }
 
   function onMove(ev) {
     const gx = Math.max(0, Math.min(100, ((ev.clientX - rect.left) / rect.width) * 100));
@@ -925,13 +882,13 @@ function startCornerResize(cell, corner, e) {
       proposed.y = gy;
       proposed.h = orig.y + orig.h - gy;
       proposed.w = gx - orig.x;
-    } else { // bl: keeps the top-right corner fixed
+    } else {
       proposed.x = gx;
       proposed.w = orig.x + orig.w - gx;
       proposed.h = gy - orig.y;
     }
     clampRect(proposed);
-    // Never let one card grow so big that it hides every other card.
+
     const capped = capForOthers(proposed, key, orig, corner);
     layoutState.cells[key] = capped;
     resolveOverlaps(capped);
@@ -940,7 +897,7 @@ function startCornerResize(cell, corner, e) {
   function onUp() {
     document.removeEventListener("pointermove", onMove);
     document.removeEventListener("pointerup", onUp);
-    try { map.releasePointerCapture(e.pointerId); } catch (_) { /* not supported */ }
+    try { map.releasePointerCapture(e.pointerId); } catch (_) {  }
     cell.classList.remove("layout-resizing");
     fillGaps(key);
     renderLayoutEditor();
@@ -949,7 +906,7 @@ function startCornerResize(cell, corner, e) {
   document.addEventListener("pointerup", onUp);
 }
 
-// Pointer interactions on the mini-map: body drag moves, corner handles resize.
+
 const layoutGridInteract = document.getElementById("layout-grid");
 if (layoutGridInteract) {
   layoutGridInteract.addEventListener("pointerdown", e => {
@@ -964,7 +921,7 @@ if (layoutGridInteract) {
   });
 }
 
-// Widget checkboxes update the layout editor live (no 3-widget limit).
+
 document.querySelectorAll(".limited-checkbox").forEach(checkbox => {
   checkbox.addEventListener("change", renderLayoutEditor);
 });
