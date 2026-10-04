@@ -1513,6 +1513,537 @@ class Dashboard(tk.Tk):
             ).pack(side="right")
 
 
+# ===== Streamlit / Web rendering (mirrors the Tkinter dashboard) =====
+# The same widget logic (data fetching, layout, theme) is reused, but instead
+# of building Tk widgets we emit HTML that Streamlit renders in the browser.
+
+def _fetch_weather_data_for_render(settings):
+    """Standalone weather fetch used by the HTML renderer (mirrors WeatherWidget.fetch_data)."""
+    if not HAS_REQUESTS:
+        return {"error": "requests not installed"}
+    coords = settings.get("coordinates") or {}
+    lat = coords.get("lat") or coords.get("latitude") or 48.137
+    lon = coords.get("lon") or coords.get("longitude") or 11.575
+    location_name = settings.get("location", "")
+    try:
+        r = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "current": "temperature_2m,weathercode,windspeed_10m,relative_humidity_2m,apparent_temperature",
+                "wind_speed_unit": "kmh",
+                "timezone": "auto",
+            },
+            timeout=10,
+        )
+        r.raise_for_status()
+        cur = r.json().get("current", {})
+        desc, icon = WEATHER_CODES.get(cur.get("weathercode", 0), ("Unknown", "?"))
+        return {
+            "temp": cur.get("temperature_2m", "--"),
+            "feels": cur.get("apparent_temperature", "--"),
+            "desc": desc,
+            "icon": icon,
+            "wind": cur.get("windspeed_10m", "--"),
+            "humidity": cur.get("relative_humidity_2m", "--"),
+            "location": location_name,
+        }
+    except Exception as exc:
+        return {"error": str(exc)[:40]}
+
+
+def _fetch_calendar_for_render():
+    try:
+        r = requests.get(f"{SERVER_URL}/calendar/events", timeout=6)
+        if r.status_code == 401:
+            return {"status": "connect"}
+        if r.status_code != 200:
+            return {"status": "error", "code": r.status_code}
+        return {"events": r.json().get("events", [])}
+    except requests.exceptions.ConnectionError:
+        return {"status": "server_off"}
+
+
+def _fetch_stock_crypto_for_render(settings):
+    sel = settings.get("stockCryptoSelection") or {}
+    symbol = sel.get("symbol", "BTC")
+    name = sel.get("name", "Bitcoin")
+    stype = sel.get("type", "crypto")
+    if ALPHA_VANTAGE_API_KEY := os.environ.get("ALPHA_VANTAGE_API_KEY"):
+        try:
+            r = requests.get(
+                f"{SERVER_URL}/finance/price",
+                params={"type": stype, "symbol": symbol, "name": name},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                return {"price": data.get("price"), "change": data.get("change") or 0,
+                        "marketCap": data.get("marketCap"), "symbol": symbol, "name": name, "type": stype}
+            try:
+                err = r.json().get("error", f"HTTP {r.status_code}")
+            except Exception:
+                err = f"HTTP {r.status_code}"
+            return {"error": err[:40]}
+        except requests.exceptions.ConnectionError:
+            return {"error": "→ Start server.py", "price_text": "Server off"}
+    try:
+        r = requests.get(
+            f"{SERVER_URL}/finance/price",
+            params={"type": stype, "symbol": symbol, "name": name},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            return {"price": data.get("price"), "change": data.get("change") or 0,
+                    "marketCap": data.get("marketCap"), "symbol": symbol, "name": name, "type": stype}
+        try:
+            err = r.json().get("error", f"HTTP {r.status_code}")
+        except Exception:
+            err = f"HTTP {r.status_code}"
+        return {"error": err[:40]}
+    except requests.exceptions.ConnectionError:
+        return {"error": "→ Start server.py", "price_text": "Server off"}
+
+
+def _fetch_notifications_for_render():
+    try:
+        r = requests.get(f"{SERVER_URL}/notifications/messages", timeout=8)
+        if r.status_code == 401:
+            return {"status": "connect_gmail"}
+        if r.status_code == 403:
+            return {"status": "no_permission"}
+        if r.status_code != 200:
+            return {"status": "error", "code": r.status_code}
+        return {"messages": r.json().get("messages", [])}
+    except requests.exceptions.ConnectionError:
+        return {"status": "server_off"}
+
+
+WIDGET_RENDERERS = {
+    "dateTime": "render_date_time_html",
+    "weather": "render_weather_html",
+    "calendar": "render_calendar_html",
+    "stockCrypto": "render_stock_crypto_html",
+    "notifications": "render_notifications_html",
+    "countdown": "render_countdown_html",
+}
+
+
+def _inject_css(colors):
+    bg = colors["bg"]
+    widget_bg = colors["widget_bg"]
+    accent = colors["accent"]
+    text = colors["text"]
+    border = colors["border"]
+    muted = colors["muted"]
+    positive = colors["positive"]
+    negative = colors["negative"]
+    header_text = get_contrast_aware_text_color(bg, accent)
+    css = f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&display=swap');
+    html, body, .main {{ margin: 0; padding: 0; font-family: 'Orbitron', sans-serif; background: {bg}; }}
+    .stApp {{ background: {bg}; color: {text}; }}
+    #dashboard-header {{ padding: 2px 0 6px; }}
+    #dashboard-header h1 {{ margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 2px; color: {header_text}; }}
+    #dashboard-header .accent-line {{ height: 2px; width: 72px; background: {accent}; margin-top: 4px; }}
+    #dashboard-content {{ position: relative; width: 100%; height: calc(100vh - 118px); margin-top: 14px; }}
+    #dashboard-footer {{ display: flex; justify-content: space-between; align-items: center; padding: 8px 0 5px; border-top: 1px solid rgba(255,255,255,0.08); margin-top: 8px; font-size: 9px; color: {muted}; }}
+    .widget-card {{ position: absolute; border-radius: 30px; border: 1px solid {border}; padding: 18px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; background: {widget_bg}; }}
+    .widget-header {{ display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }}
+    .widget-header-icon {{ font-size: 14px; }}
+    .widget-header-title {{ font-size: 12px; font-weight: 700; letter-spacing: 1px; color: {header_text}; }}
+    .widget-header-line {{ height: 2px; width: 72px; background: {accent}; margin-bottom: 10px; }}
+    .widget-spacer {{ flex: 1; }}
+    .widget-text-center {{ text-align: center; }}
+    .widget-time, .widget-temp, .widget-price, .widget-countdown {{ text-align: center; font-weight: 700; }}
+    .widget-text, .widget-time, .widget-temp, .widget-price, .widget-countdown {{ color: {text}; }}
+    .widget-accent-text {{ color: {header_text}; }}
+    .widget-muted-text {{ color: {muted}; }}
+    .widget-positive {{ color: {positive}; }}
+    .widget-negative {{ color: {negative}; }}
+    .widget-list {{ flex: 1; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }}
+    .widget-list-row {{ display: flex; align-items: center; gap: 8px; padding: 3px 0; }}
+    .widget-list-time {{ font-size: 12px; width: 14ch; flex-shrink: 0; text-align: left; }}
+    .widget-list-text {{ font-size: 12px; color: {text}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .widget-msg-row {{ display: flex; align-items: flex-start; gap: 8px; padding: 2px 0; }}
+    .widget-msg-dot {{ font-size: 12px; width: 2ch; flex-shrink: 0; text-align: center; }}
+    .widget-msg-info {{ flex: 1; min-width: 0; }}
+    .widget-msg-from {{ font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .widget-msg-subject {{ font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .widget-status {{ font-size: 13px; text-align: left; white-space: pre-line; }}
+    .stApp > header, .stApp > .css-184ths3 {{ display: none; }}
+    .stApp [data-testid="stToolbar"] {{ display: none; }}
+    div[data-testid="stSidebarNav"] {{ display: none; }}
+    </style>
+    """
+    return css
+
+
+def render_date_time_html(colors, settings, big, scale, content_h_px):
+    now = datetime.now()
+    time_str = now.strftime("%H:%M:%S")
+    date_str = now.strftime("%d. %B %Y")
+    header_text = get_contrast_aware_text_color(colors["widget_bg"], colors["accent"])
+    time_fs = max(int((44 if big else 34) * scale), 22)
+    date_fs = max(int((18 if big else 14) * scale), 10)
+    html = f"""
+    <div class="widget-header">
+        <span class="widget-header-icon">🕐</span>
+        <span class="widget-header-title" style="color:{header_text}">DATE & TIME</span>
+    </div>
+    <div class="widget-header-line" style="background:{colors['accent']}"></div>
+    <div class="widget-spacer"></div>
+    <div class="widget-time" style="font-size:{time_fs}px;color:{colors['text']}">{time_str}</div>
+    <div class="widget-text-center" style="font-size:{date_fs}px;color:{header_text}">{date_str}</div>
+    """
+    if big:
+        day_str = now.strftime("%A")
+        day_fs = max(int(15 * scale), 10)
+        html += f'<div class="widget-muted-text" style="font-size:{day_fs}px">{day_str}</div>'
+    html += '<div class="widget-spacer"></div>'
+    return html
+
+
+def render_weather_html(colors, settings, big, scale):
+    header_text = get_contrast_aware_text_color(colors["widget_bg"], colors["accent"])
+    desc_fs = max(int((15 if big else 12) * scale), 10)
+    result = _fetch_weather_data_for_render(settings)
+    html = f"""
+    <div class="widget-header">
+        <span class="widget-header-icon">🌤</span>
+        <span class="widget-header-title" style="color:{header_text}">WEATHER</span>
+    </div>
+    <div class="widget-header-line" style="background:{colors['accent']}"></div>
+    <div class="widget-spacer"></div>
+    """
+    if "error" in result:
+        temp_text = "--°C"
+        desc_text = f"Error: {result['error']}"
+        loc_text = ""; details_text = ""
+    else:
+        temp_text = f"{result['icon']} {result['temp']}°C"
+        desc_text = result['desc']
+        if big:
+            loc_text = f"📍 {result['location']}" if result['location'] else ""
+            details_text = f"Feels like {result['feels']}°C • 💨 {result['wind']} km/h • 💧 {result['humidity']}%"
+        else:
+            loc_text = ""; details_text = ""
+    temp_fs = max(int((44 if big else 32) * scale), 20)
+    html += f'<div class="widget-temp" style="font-size:{temp_fs}px;color:{colors["text"]}">{temp_text}</div>'
+    html += f'<div class="widget-text-center" style="font-size:{desc_fs}px;color:{header_text}">{desc_text}</div>'
+    if big:
+        details_fs = max(int(13 * scale), 10)
+        html += f'<div class="widget-muted-text" style="font-size:{details_fs}px">{loc_text}</div>'
+        html += f'<div class="widget-muted-text" style="font-size:{details_fs}px">{details_text}</div>'
+    html += '<div class="widget-spacer"></div>'
+    return html
+
+
+def render_calendar_html(colors, settings, big, scale):
+    header_text = get_contrast_aware_text_color(colors["widget_bg"], colors["accent"])
+    result = _fetch_calendar_for_render()
+    html = f"""
+    <div class="widget-header">
+        <span class="widget-header-icon">📅</span>
+        <span class="widget-header-title" style="color:{header_text}">CALENDAR</span>
+    </div>
+    <div class="widget-header-line" style="background:{colors['accent']}"></div>
+    <div class="widget-list">
+    """
+    if result.get("status") == "connect":
+        html += f'<div class="widget-status" style="color:{colors["muted"]}">Google Calendar not connected.\nPlease connect in Settings.</div>'
+    elif result.get("status") == "server_off":
+        html += f'<div class="widget-status" style="color:{colors["muted"]}">Server not reachable.\n→ Start server.py</div>'
+    elif result.get("status") == "error":
+        html += f'<div class="widget-status" style="color:{colors["muted"]}">Server error: {result.get("code")}</div>'
+    else:
+        events = result.get("events", [])
+        if not events:
+            html += f'<div class="widget-status" style="color:{colors["muted"]}">No upcoming events</div>'
+        else:
+            max_ev = 6 if big else 3
+            time_fs = max(int(12 * scale), 9)
+            for ev in events[:max_ev]:
+                start_raw = (ev.get("start") or {}).get("dateTime") or (ev.get("start") or {}).get("date", "")
+                try:
+                    dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+                    start_fmt = dt.strftime("%m-%d %H:%M")
+                except Exception:
+                    start_fmt = start_raw[:10]
+                summary = (ev.get("summary") or "No title")[:35]
+                html += f"""
+                <div class="widget-list-row">
+                    <span class="widget-list-time" style="font-size:{time_fs}px;color:{header_text}">▸ {start_fmt}</span>
+                    <span class="widget-list-text" style="font-size:{time_fs}px">{summary}</span>
+                </div>
+                """
+    html += "</div>"
+    return html
+
+
+def render_stock_crypto_html(colors, settings, big, scale):
+    header_text = get_contrast_aware_text_color(colors["widget_bg"], colors["accent"])
+    sel = settings.get("stockCryptoSelection") or {}
+    symbol = sel.get("symbol", "BTC")
+    name = sel.get("name", "Bitcoin")
+    result = _fetch_stock_crypto_for_render(settings)
+    icon = "₿" if (sel.get("type") or "crypto") == "crypto" else "📈"
+    html = f"""
+    <div class="widget-header">
+        <span class="widget-header-icon">{icon}</span>
+        <span class="widget-header-title" style="color:{header_text}">PRICE</span>
+    </div>
+    <div class="widget-header-line" style="background:{colors['accent']}"></div>
+    <div class="widget-spacer"></div>
+    <div class="widget-subtitle" style="font-size:{max(int((14 if big else 12) * scale), 9)}px;color:{header_text}">{symbol} — {name}</div>
+    """
+    price_fs = max(int((38 if big else 26) * scale), 14)
+    change_fs = max(int((14 if big else 12) * scale), 9)
+    if result.get("error"):
+        html += f'<div class="widget-price" style="font-size:{price_fs}px;color:{colors["text"]}">{result.get("price_text", "Error")}</div>'
+        html += f'<div class="widget-text-center" style="font-size:{change_fs}px;color:{colors["muted"]}">{result["error"]}</div>'
+    else:
+        price = result["price"]
+        change = result["change"]
+        color = colors["positive"] if change >= 0 else colors["negative"]
+        sign = "+" if change >= 0 else ""
+        html += f'<div class="widget-price" style="font-size:{price_fs}px;color:{colors["text"]}">${price:,.2f}</div>'
+        html += f'<div class="widget-text-center" style="font-size:{change_fs}px;color:{color}">{sign}{change:.2f}% (24 h)</div>'
+        if big and result.get("marketCap"):
+            meta_fs = max(int(12 * scale), 9)
+            mcap = result["marketCap"]
+            html += f'<div class="widget-muted-text" style="font-size:{meta_fs}px">Market Cap: ${mcap:,.0f}</div>'
+    html += '<div class="widget-spacer"></div>'
+    return html
+
+
+def render_notifications_html(colors, settings, big, scale):
+    header_text = get_contrast_aware_text_color(colors["widget_bg"], colors["accent"])
+    result = _fetch_notifications_for_render()
+    html = f"""
+    <div class="widget-header">
+        <span class="widget-header-icon">📬</span>
+        <span class="widget-header-title" style="color:{header_text}">MESSAGES</span>
+    </div>
+    <div class="widget-header-line" style="background:{colors['accent']}"></div>
+    <div class="widget-list">
+    """
+    if result.get("status") == "connect_gmail":
+        html += f'<div class="widget-status" style="color:{colors["muted"]}">Gmail not connected.\nPlease connect in Settings.</div>'
+    elif result.get("status") == "no_permission":
+        html += f'<div class="widget-status" style="color:{colors["muted"]}">No Gmail permission.\nPlease reconnect your account.</div>'
+    elif result.get("status") == "server_off":
+        html += f'<div class="widget-status" style="color:{colors["muted"]}">Server not reachable.\n→ Start server.py</div>'
+    elif result.get("status") == "error":
+        html += f'<div class="widget-status" style="color:{colors["muted"]}">Server error: {result.get("code")}</div>'
+    else:
+        messages = result.get("messages", [])
+        if not messages:
+            html += f'<div class="widget-status" style="color:{colors["muted"]}">No new messages</div>'
+        else:
+            from_fs = max(int(11 * scale), 8)
+            subj_fs = max(int(11 * scale), 8)
+            for msg in messages[:10]:
+                is_unread = msg.get("unread", False)
+                dot_color = colors["accent"] if is_unread else colors["muted"]
+                text_color = colors["text"] if is_unread else colors["muted"]
+                dot = "●" if is_unread else "○"
+                html += f"""
+                <div class="widget-msg-row">
+                    <span class="widget-msg-dot" style="font-size:{from_fs}px;color:{dot_color}">{dot}</span>
+                    <div class="widget-msg-info">
+                        <div class="widget-msg-from" style="font-size:{from_fs}px;color:{text_color}">{msg.get('from') or '(unknown sender)'}</div>
+                        <div class="widget-msg-subject" style="font-size:{subj_fs}px;color:{colors['muted']}">{msg.get('subject') or '(no subject)'}</div>
+                    </div>
+                </div>
+                """
+    html += "</div>"
+    return html
+
+
+def render_countdown_html(colors, settings, big, scale):
+    header_text = get_contrast_aware_text_color(colors["widget_bg"], colors["accent"])
+    cd = settings.get("countdown") or {}
+    label_text = cd.get("label") or cd.get("name") or settings.get("countdownLabel") or settings.get("countdown_label") or "Event"
+    target_date = cd.get("date") or cd.get("targetDate") or settings.get("countdownDate") or settings.get("countdown_date") or ""
+    html = f"""
+    <div class="widget-header">
+        <span class="widget-header-icon">⏳</span>
+        <span class="widget-header-title" style="color:{header_text}">COUNTDOWN</span>
+    </div>
+    <div class="widget-header-line" style="background:{colors['accent']}"></div>
+    <div class="widget-spacer"></div>
+    <div class="widget-subtitle" style="font-size:{max(int((16 if big else 13) * scale), 10)}px;color:{header_text}">{label_text}</div>
+    """
+    cd_fs = max(int((30 if big else 22) * scale), 12)
+    date_fs = max(int(12 * scale), 9)
+    if not target_date:
+        html += f'<div class="widget-countdown" style="font-size:{cd_fs}px;color:{colors["text"]}">No date set</div>'
+        html += f'<div class="widget-muted-text" style="font-size:{date_fs}px">Set date in Settings</div>'
+    else:
+        try:
+            target = datetime.fromisoformat(target_date)
+            now = datetime.now()
+            diff = target - now
+            if diff.total_seconds() <= 0:
+                html += f'<div class="widget-countdown" style="font-size:{cd_fs}px;color:{colors["text"]}">🎉 Reached!</div>'
+                html += f'<div class="widget-muted-text" style="font-size:{date_fs}px">{target.strftime("%m-%d %Y")}</div>'
+            else:
+                total_secs = int(diff.total_seconds())
+                days = total_secs // 86400
+                hours = (total_secs % 86400) // 3600
+                mins = (total_secs % 3600) // 60
+                secs = total_secs % 60
+                if days > 0:
+                    cd_text = f"{days}D {hours:02d}:{mins:02d}:{secs:02d}"
+                else:
+                    cd_text = f"{hours:02d}:{mins:02d}:{secs:02d}"
+                html += f'<div class="widget-countdown" style="font-size:{cd_fs}px;color:{colors["text"]}">{cd_text}</div>'
+                html += f'<div class="widget-muted-text" style="font-size:{date_fs}px">Target: {target.strftime("%m-%d %Y %H:%M")}</div>'
+        except Exception:
+            html += f'<div class="widget-countdown" style="font-size:{cd_fs}px;color:{colors["text"]}">Invalid date</div>'
+    html += '<div class="widget-spacer"></div>'
+    return html
+
+
+def render_dashboard_html(settings):
+    """Render the full dashboard as HTML (for use under Streamlit)."""
+    colors = extract_colors(settings)
+    css = _inject_css(colors)
+    
+    widgets_en = settings.get("widgets", {})
+    enabled = [k for k, v in widgets_en.items() if v]
+    if not enabled:
+        enabled = ["dateTime"]
+    order = settings.get("widgetOrder", [])
+    ordered = [k for k in order if k in enabled]
+    enabled = ordered + [k for k in enabled if k not in ordered]
+    
+    # Use a fixed content height for the web (1080px screen equivalent)
+    content_h_px = max(200, 1080 - 145)
+    rects = resolve_widget_layout(enabled, settings.get("widgetLayout"))
+    margin = 0.006
+    content_html = '<div id="dashboard-content">'
+    
+    render_map = {
+        "dateTime": render_date_time_html,
+        "weather": render_weather_html,
+        "calendar": render_calendar_html,
+        "stockCrypto": render_stock_crypto_html,
+        "notifications": render_notifications_html,
+        "countdown": render_countdown_html,
+    }
+    
+    for key in enabled:
+        rect = rects.get(key)
+        if not rect:
+            continue
+        big = rect["h"] > 50
+        area_frac = (rect["w"] / 100) * (rect["h"] / 100)
+        scale = math.sqrt(area_frac / 0.10)
+        card_h_px = content_h_px * rect["h"] / 100
+        natural = (NATURAL_HEIGHT.get(key, 150) + (BIG_EXTRA_HEIGHT if big else 0)) * 1.10
+        scale = max(0.8, min(scale, card_h_px / natural, 2.6))
+        
+        renderer = render_map.get(key)
+        if not renderer:
+            continue
+        
+        if key == "dateTime":
+            widget_html = renderer(colors, settings, big, scale, content_h_px)
+        else:
+            widget_html = renderer(colors, settings, big, scale)
+        
+        left = rect["x"] / 100 + margin
+        top = rect["y"] / 100 + margin
+        width = rect["w"] / 100 - 2 * margin
+        height = rect["h"] / 100 - 2 * margin
+        
+        content_html += f"""
+        <div class="widget-card" data-key="{key}" style="background:{colors['widget_bg']};border-color:{colors['border']};left:{left * 100}%;top:{top * 100}%;width:{width * 100}%;height:{height * 100}%;">
+            {widget_html}
+        </div>
+        """
+    content_html += "</div>"
+    
+    footer_loc = settings.get("location", "")
+    footer_html = f"""
+    <div id="dashboard-footer">
+        <span class="footer-shortcuts">ESC exit fullscreen • F11 fullscreen • R reload • Q quit</span>
+        <span id="footer-location" style="color:{colors['muted']}">{'📍 ' + footer_loc if footer_loc else ''}</span>
+    </div>
+    """
+    
+    full_html = f"""
+    <div id="dashboard-header">
+        <h1>▣ DASHBOARD</h1>
+        <div class="accent-line"></div>
+    </div>
+    {content_html}
+    {footer_html}
+    """
+    
+    return css, full_html
+
+
+# Streamlit entry point — `server.py` launches this file with `streamlit run dashboard.py`.
+# When run under Streamlit, render the HTML dashboard instead of opening Tk.
+try:
+    import streamlit as st
+    import streamlit.components.v1 as components
+    HAS_STREAMLIT = True
+except ImportError:
+    HAS_STREAMLIT = False
+
+
+def _run_streamlit():
+    st.set_page_config(
+        page_title="Dashboard",
+        layout="wide",
+        page_icon="favicon.png",
+        initial_sidebar_state="collapsed",
+    )
+
+    # Hide Streamlit's header, toolbar, and other UI chrome so only the
+    # dashboard shows.
+    st.markdown(
+        """
+        <style>
+        .stApp > header { display: none; }
+        .stApp [data-testid="stToolbar"] { display: none; }
+        .stApp [data-testid="stDeployButton"] { display: none; }
+        div[data-testid="stSidebarNav"] { display: none; }
+        body { margin: 0; padding: 0; }
+        .block-container { padding: 0; margin: 0; max-width: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    settings = load_settings()
+    if not settings:
+        settings = {"widgets": {"dateTime": True}}
+
+    # Auto-refresh every 5 seconds for live data (weather, price, time)
+    try:
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=5000, limit=100000, key="dashboardrefresh")
+    except ImportError:
+        pass
+
+    # Render the dashboard HTML. We use components.html() which renders
+    # the full HTML inside a Streamlit iframe. This is necessary because
+    # st.markdown with unsafe_allow_html=True still passes content through
+    # a markdown parser that mangles complex nested HTML (wrapping parts
+    # in <pre><code> blocks). components.html renders raw HTML verbatim.
+    css, html_content = render_dashboard_html(settings)
+    full_html = css + html_content
+    components.html(full_html, height=1080)
+
+
 if __name__ == "__main__":
     if not HAS_REQUESTS:
         print("[WARNING] 'requests' not installed. Live data will not be loaded.")
@@ -1525,6 +2056,9 @@ if __name__ == "__main__":
         print(" http://localhost:8000, before you start dashboard.py.")
         print(" The dashboard will run with default settings regardless.")
 
-    app = Dashboard()
-    app.mainloop()
-
+    # If Streamlit is available and we're running under it, render as HTML
+    if HAS_STREAMLIT:
+        _run_streamlit()
+    else:
+        app = Dashboard()
+        app.mainloop()

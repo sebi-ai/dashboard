@@ -1,5 +1,6 @@
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
+from datetime import datetime
 import json
 import os
 import subprocess
@@ -107,6 +108,47 @@ _cmc_map_cache = {"data": None, "fetched_at": 0}
 _CMC_MAP_CACHE_SECONDS = 60 * 60
 
 _dashboard_proc = None
+_streamlit_proc = None
+
+
+def _launch_streamlit():
+    global _streamlit_proc
+
+    # Replace any running instance so the dashboard always runs the latest code
+    if _streamlit_proc is not None and _streamlit_proc.poll() is None:
+        try:
+            _streamlit_proc.terminate()
+            _streamlit_proc.wait(timeout=5)
+        except Exception:
+            try:
+                _streamlit_proc.kill()
+            except Exception:
+                pass
+        _streamlit_proc = None
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    streamlit_script = os.path.join(script_dir, "dashboard.py")
+
+    if not os.path.exists(streamlit_script):
+        return False, f"dashboard.py not found in: {script_dir}"
+
+    try:
+        # Use start_new_session on all platforms so the subprocess runs
+        # detached from the parent (no console window on Windows, no
+        # terminal attachment on macOS/Linux). Avoid CREATE_NEW_CONSOLE
+        # because that can trigger an elevation prompt on Windows.
+        kwargs = {"start_new_session": True}
+
+        _streamlit_proc = subprocess.Popen(
+            [sys.executable, "-m", "streamlit", "run", streamlit_script,
+             "--server.port=8501", "--server.headless=true",
+             "--server.enableCORS=false"],
+            cwd=script_dir,
+            **kwargs,
+        )
+        return True, f"Streamlit dashboard started (PID {_streamlit_proc.pid})"
+    except Exception as exc:
+        return False, str(exc)
 
 
 def _get_cmc_map():
@@ -480,12 +522,22 @@ def _load_google_credentials():
         client_id=token_data.get("clientId") or GOOGLE_CLIENT_ID,
         client_secret=token_data.get("clientSecret") or GOOGLE_CLIENT_SECRET,
         scopes=token_data.get("scopes") or GOOGLE_SCOPES,
+        expiry=datetime.fromisoformat(token_data["expiry"])
+        if token_data.get("expiry")
+        else None,
     )
     if not credentials.valid:
-        credentials.refresh(GoogleAuthRequest())
-        _store_google_tokens(credentials)
+        try:
+            credentials.refresh(GoogleAuthRequest())
+            _store_google_tokens(credentials)
+        except Exception as e:
+            print(f"Google token refresh failed: {e}")
+            # The refresh token is invalid or revoked — clear the stale
+            # credentials so the UI shows the "connect" button instead of
+            # repeatedly crashing on a bad token.
+            _disconnect_google()
+            return None
     return credentials
-
 
 def _disconnect_google():
     settings = _load_settings()
@@ -572,11 +624,11 @@ def _launch_dashboard():
         return False, f"dashboard.py not found in: {script_dir}"
 
     try:
-        kwargs = {}
-        if sys.platform == "win32":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
-        else:
-            kwargs["start_new_session"] = True
+        # Use start_new_session on all platforms so the subprocess runs
+        # detached from the parent (no console window on Windows, no
+        # terminal attachment on macOS/Linux). Avoid CREATE_NEW_CONSOLE
+        # because that can trigger an elevation prompt on Windows.
+        kwargs = {"start_new_session": True}
 
         _dashboard_proc = subprocess.Popen(
             [sys.executable, dashboard_path],
@@ -601,6 +653,14 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        if self.path == "/webapp":
+            ok, msg = _launch_streamlit()
+            if ok:
+                _write_json_response(self, 200, {"status": "ok", "message": msg, "url": "http://localhost:8501"})
+            else:
+                _write_json_response(self, 500, {"status": "error", "error": msg})
+            return
+
         if self.path == "/launch":
             ok, msg = _launch_dashboard()
             if ok:
@@ -639,6 +699,16 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
+
+        if path == "/dashboard.html":
+            # Redirect to the Streamlit dashboard webapp
+            # Ensure streamlit is running
+            ok, msg = _launch_streamlit()
+            self.send_response(302)
+            self.send_cors_headers()
+            self.send_header("Location", "http://localhost:8501")
+            self.end_headers()
+            return
 
         if path == "/load":
             if os.path.exists("settings.json"):
