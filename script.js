@@ -335,36 +335,46 @@ document.getElementById("settings-btn").addEventListener("click", function(e) {
  window.location.href = "/settings.html";
 });
 
-// Start Streamlit dashboard on click of #redirect-start-btn
-document.getElementById("redirect-start-btn").addEventListener("click", function(e) {
+// Start Streamlit dashboard on click of #redirect-start-btn or #start-btn
+function startDashboard(e) {
 	e.preventDefault();
 
 	// /webapp is a POST-only endpoint on server.py — a GET would 404 (static
-		// handler returns HTML, not JSON) which triggers the .catch below and shows
-		// a misleading "could not reach dashboard" error even though the server is
-		// up. Use POST so the server actually launches streamlit.
-		// Navigate the current window to the dashboard after the POST succeeds.
-		// Avoids opening an about:blank tab that users see before redirect.
-		fetch("/webapp", { method: "POST", credentials: "include" })
-			.then(res => {
-				if (!res.ok) {
-					throw new Error(`Server returned HTTP ${res.status}`);
-				}
-				return res.json();
-			})
-			.then(data => {
-				if (data.status === "ok") {
-					// Streamlit is starting — navigate to it.
-					window.location.href = "http://localhost:8501";
-				} else {
-					showNotification(data.error || "Failed to start dashboard.", "error");
-				}
-			})
-			.catch(err => {
-				console.error("Dashboard start failed:", err);
-				showNotification("Could not reach the server. Make sure server.py is running on localhost:8000.", "error");
-			});
-});
+	// handler returns HTML, not JSON) which triggers the .catch below and shows
+	// a misleading "could not reach dashboard" error even though the server is
+	// up. Use POST so the server actually launches streamlit.
+	// Navigate the current window to the dashboard after the POST succeeds.
+	// Avoids opening an about:blank tab that users see before redirect.
+	fetch("/webapp", { method: "POST", credentials: "include" })
+		.then(res => {
+			if (!res.ok) {
+				throw new Error(`Server returned HTTP ${res.status}`);
+			}
+			return res.json();
+		})
+		.then(data => {
+			if (data.status === "ok") {
+				// Streamlit is starting — navigate to it.
+				window.location.href = "http://localhost:8501";
+			} else {
+				showNotification(data.error || "Failed to start dashboard.", "error");
+			}
+		})
+		.catch(err => {
+			console.error("Dashboard start failed:", err);
+			showNotification("Could not reach the server. Make sure server.py is running on localhost:8000.", "error");
+		});
+}
+
+const redirectStartBtn = document.getElementById("redirect-start-btn");
+if (redirectStartBtn) {
+	redirectStartBtn.addEventListener("click", startDashboard);
+}
+
+const startBtn = document.getElementById("start-btn");
+if (startBtn) {
+	startBtn.addEventListener("click", startDashboard);
+}
 
 document.getElementById("about-btn").addEventListener("click", function(e) {
  e.preventDefault();

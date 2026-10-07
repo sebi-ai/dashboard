@@ -1644,12 +1644,11 @@ def _inject_css(colors):
     css = f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&display=swap');
-    html, body, .main {{ margin: 0; padding: 0; font-family: 'Orbitron', sans-serif; background: {bg}; }}
-    .stApp {{ background: {bg}; color: {text}; }}
+    html, body, .main {{ margin: 0; padding: 0; font-family: 'Orbitron', sans-serif; background: {bg}; height: 100%; }}
     #dashboard-header {{ padding: 2px 0 6px; }}
     #dashboard-header h1 {{ margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 2px; color: {header_text}; }}
     #dashboard-header .accent-line {{ height: 2px; width: 72px; background: {accent}; margin-top: 4px; }}
-    #dashboard-content {{ position: relative; width: 100%; height: calc(100vh - 118px); margin-top: 14px; }}
+    #dashboard-content {{ position: relative; width: 100%; height: calc(100vh - 118px); margin-top: 14px; overflow: hidden; }}
     #dashboard-footer {{ display: flex; justify-content: space-between; align-items: center; padding: 8px 0 5px; border-top: 1px solid rgba(255,255,255,0.08); margin-top: 8px; font-size: 9px; color: {muted}; }}
     .widget-card {{ position: absolute; border-radius: 30px; border: 1px solid {border}; padding: 18px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; background: {widget_bg}; }}
     .widget-header {{ display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }}
@@ -1674,9 +1673,6 @@ def _inject_css(colors):
     .widget-msg-from {{ font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
     .widget-msg-subject {{ font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
     .widget-status {{ font-size: 13px; text-align: left; white-space: pre-line; }}
-    .stApp > header, .stApp > .css-184ths3 {{ display: none; }}
-    .stApp [data-testid="stToolbar"] {{ display: none; }}
-    div[data-testid="stSidebarNav"] {{ display: none; }}
     </style>
     """
     return css
@@ -1993,7 +1989,6 @@ def render_dashboard_html(settings):
 # When run under Streamlit, render the HTML dashboard instead of opening Tk.
 try:
     import streamlit as st
-    import streamlit.components.v1 as components
     HAS_STREAMLIT = True
 except ImportError:
     HAS_STREAMLIT = False
@@ -2008,7 +2003,8 @@ def _run_streamlit():
     )
 
     # Hide Streamlit's header, toolbar, and other UI chrome so only the
-    # dashboard shows.
+    # dashboard shows. These selectors target the Streamlit app page itself
+    # (outside the iframe), hiding the surrounding Chrome.
     st.markdown(
         """
         <style>
@@ -2016,6 +2012,7 @@ def _run_streamlit():
         .stApp [data-testid="stToolbar"] { display: none; }
         .stApp [data-testid="stDeployButton"] { display: none; }
         div[data-testid="stSidebarNav"] { display: none; }
+        .stApp [data-testid="stBottomBlock"] { display: none; }
         body { margin: 0; padding: 0; }
         .block-container { padding: 0; margin: 0; max-width: none; }
         </style>
@@ -2028,20 +2025,22 @@ def _run_streamlit():
         settings = {"widgets": {"dateTime": True}}
 
     # Auto-refresh every 5 seconds for live data (weather, price, time)
+    # and to pick up settings changes made on the website.
     try:
         from streamlit_autorefresh import st_autorefresh
         st_autorefresh(interval=5000, limit=100000, key="dashboardrefresh")
     except ImportError:
         pass
 
-    # Render the dashboard HTML. We use components.html() which renders
-    # the full HTML inside a Streamlit iframe. This is necessary because
-    # st.markdown with unsafe_allow_html=True still passes content through
-    # a markdown parser that mangles complex nested HTML (wrapping parts
-    # in <pre><code> blocks). components.html renders raw HTML verbatim.
+    # Render the dashboard HTML. We use st.iframe with height="stretch"
+    # so the iframe expands to fill the full Streamlit viewport — a fixed
+    # pixel height (e.g. the old height=1080) crops the dashboard on taller
+    # screens and leaves a visible block of Streamlit Chrome below.
+    # The iframe keeps our CSS isolated so Streamlit's own styles can never
+    # interfere with the dashboard rendering.
     css, html_content = render_dashboard_html(settings)
     full_html = css + html_content
-    components.html(full_html, height=1080)
+    st.iframe(full_html, height="stretch", alt="Dashboard")
 
 
 if __name__ == "__main__":

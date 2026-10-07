@@ -13,7 +13,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from googleapiclient.discovery import build
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 GOOGLE_CREDENTIALS_FILE = os.environ.get(
     "GOOGLE_CREDENTIALS_FILE",
@@ -100,7 +100,7 @@ GOOGLE_SCOPES = [
 ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY")
 CMC_API_KEY = os.environ.get("CMC_API_KEY")
 
-SETTINGS_FILE = "settings.json"
+SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
 _pending_oauth_states = {}
 
@@ -244,24 +244,34 @@ def _search_crypto(keywords):
     results = []
     keywords_lower = keywords.lower()
 
-    try:
-        response = requests.get(
-            "https://api.coingecko.com/api/v3/search",
-            params={"query": keywords},
-            timeout=10,
-        )
-        response.raise_for_status()
-        for coin in response.json().get("coins", []):
-            results.append({
-                "type": "crypto",
-                "symbol": coin.get("symbol"),
-                "name": coin.get("name"),
-                "id": coin.get("id"),
-            })
-            if len(results) >= 8:
+    # Retry up to 2 times to tolerate CoinGecko's free-tier rate limit (HTTP 429).
+    for attempt in range(3):
+        try:
+            response = requests.get(
+                "https://api.coingecko.com/api/v3/search",
+                params={"query": keywords},
+                timeout=10,
+            )
+            if response.status_code == 429:
+                if attempt < 2:
+                    time.sleep(1 + attempt)
+                    continue
+                print("CoinGecko search rate-limited:", response.status_code)
                 break
-    except Exception as e:
-        print("CoinGecko search failed:", e)
+            response.raise_for_status()
+            for coin in response.json().get("coins", []):
+                results.append({
+                    "type": "crypto",
+                    "symbol": coin.get("symbol"),
+                    "name": coin.get("name"),
+                    "id": coin.get("id"),
+                })
+                if len(results) >= 8:
+                    break
+            break
+        except Exception as e:
+            print("CoinGecko search failed:", e)
+            break
 
     if CMC_API_KEY:
         try:
@@ -711,8 +721,8 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if path == "/load":
-            if os.path.exists("settings.json"):
-                with open("settings.json", "r") as f:
+            if os.path.exists(SETTINGS_FILE):
+                with open(SETTINGS_FILE, "r") as f:
                     content = f.read()
                 body = content.encode()
                 self.send_response(200)
@@ -757,7 +767,7 @@ class Handler(SimpleHTTPRequestHandler):
             redirect_uri = pending.get("redirect_uri") if pending else _request_redirect_uri(self)
             try:
                 flow = _build_google_flow(code_verifier=code_verifier, redirect_uri=redirect_uri)
-                flow.fetch_token(code=code)
+                flow.fetch_token(code=code, redirect_uri=redirect_uri)
                 _store_google_tokens(flow.credentials)
             except Exception as e:
                 self._redirect_to_settings(f"google_error={quote(_google_oauth_error_hint(str(e)))}")
