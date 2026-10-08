@@ -1993,6 +1993,43 @@ try:
 except ImportError:
     HAS_STREAMLIT = False
 
+# `st.iframe` only exists in Streamlit >= 1.56; the project's requirements allow
+# >= 1.40, so fall back to the (older but universal) components.v1 API there.
+HAS_ST_IFRAME = HAS_STREAMLIT and hasattr(st, "iframe")
+
+
+def _embed_dashboard_html(full_html: str) -> None:
+    """Embed the dashboard HTML in the Streamlit page, filling the viewport.
+
+    Uses `st.iframe` when available (Streamlit >= 1.56), otherwise the older
+    `st.components.v1.html` API that ships with every Streamlit version this
+    project supports. The iframe keeps our CSS isolated from Streamlit's own
+    styles so Streamlit's chrome can never interfere with the dashboard.
+    """
+    if HAS_ST_IFRAME:
+        # height="stretch" fills the whole viewport — a fixed pixel height
+        # (e.g. the old height=1080) crops the dashboard on taller screens
+        # and leaves a visible block of Streamlit Chrome below.
+        st.iframe(full_html, height="stretch", alt="Dashboard")
+        return
+
+    # Older Streamlit: scrolling on the page itself is off and the outer
+    # chrome is hidden via CSS, so a full-viewport iframe fills the screen.
+    html = f"""
+    <style>
+        html, body {{ margin: 0; padding: 0; overflow: hidden; }}
+    </style>
+    <iframe srcdoc={_html_attr(full_html)} style="width:100vw;height:100vh;border:0;margin:0;display:block;"
+            title="Dashboard"></iframe>
+    """
+    st.components.v1.html(html, height=800, scrolling=False)
+
+
+def _html_attr(text: str) -> str:
+    """Quote text for use inside an HTML attribute, escaping the quotes that
+    would otherwise terminate the attribute early."""
+    return '"' + text.replace("&", "&amp;").replace('"', "&quot;").replace("\\", "&#92;") + '"'
+
 
 def _run_streamlit():
     st.set_page_config(
@@ -2032,15 +2069,15 @@ def _run_streamlit():
     except ImportError:
         pass
 
-    # Render the dashboard HTML. We use st.iframe with height="stretch"
-    # so the iframe expands to fill the full Streamlit viewport — a fixed
-    # pixel height (e.g. the old height=1080) crops the dashboard on taller
-    # screens and leaves a visible block of Streamlit Chrome below.
+    # Render the dashboard HTML. We embed it in an iframe so the iframe
+    # expands to fill the full Streamlit viewport — a fixed pixel height
+    # (e.g. the old height=1080) crops the dashboard on taller screens and
+    # leaves a visible block of Streamlit Chrome below.
     # The iframe keeps our CSS isolated so Streamlit's own styles can never
     # interfere with the dashboard rendering.
     css, html_content = render_dashboard_html(settings)
     full_html = css + html_content
-    st.iframe(full_html, height="stretch", alt="Dashboard")
+    _embed_dashboard_html(full_html)
 
 
 if __name__ == "__main__":
