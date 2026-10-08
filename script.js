@@ -354,8 +354,36 @@ function startDashboard(e) {
 		})
 		.then(data => {
 			if (data.status === "ok") {
-				// Streamlit is starting — navigate to it.
-				window.location.href = "http://localhost:8501";
+				// Streamlit was just launched but needs a few seconds to be ready.
+				// Poll the Streamlit health endpoint until it responds, then redirect.
+				const dashboardUrl = "http://localhost:8501";
+				const maxAttempts = 30; // up to ~15s
+				let attempts = 0;
+				function pollAndRedirect() {
+					fetch(dashboardUrl + "/_stcore/health", { method: "GET" })
+						.then(res => {
+							if (res.ok) {
+								window.location.href = dashboardUrl;
+							} else if (attempts < maxAttempts) {
+								attempts++;
+								setTimeout(pollAndRedirect, 500);
+							} else {
+								// Fallback: redirect anyway after timeout
+								window.location.href = dashboardUrl;
+							}
+						})
+						.catch(() => {
+							if (attempts < maxAttempts) {
+								attempts++;
+								setTimeout(pollAndRedirect, 500);
+							} else {
+								window.location.href = dashboardUrl;
+							}
+						});
+				}
+				// Show a notification that we're waiting
+				showNotification("Starting dashboard…", "info");
+				pollAndRedirect();
 			} else {
 				showNotification(data.error || "Failed to start dashboard.", "error");
 			}
