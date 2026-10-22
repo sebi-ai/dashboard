@@ -114,6 +114,17 @@ _streamlit_proc = None
 def _launch_streamlit():
     global _streamlit_proc
 
+    # A streamlit instance that is already serving (e.g. started by a previous
+    # server.py run — it is detached and survives the parent) already has the
+    # port. Spawning another one would crash-loop on the busy port while the
+    # still-working old instance keeps answering, so probe first.
+    try:
+        r = requests.get("http://localhost:8501/_stcore/health", timeout=2)
+        if r.status_code == 200:
+            return True, "Streamlit dashboard already running"
+    except Exception:
+        pass
+
     # Replace any running instance so the dashboard always runs the latest code
     if _streamlit_proc is not None and _streamlit_proc.poll() is None:
         try:
@@ -200,15 +211,15 @@ def _search_stocks(keywords):
             timeout=10,
         )
         response.raise_for_status()
-        for quote in response.json().get("quotes", []):
-            quote_type = (quote.get("quoteType") or "").upper()
+        for q in response.json().get("quotes", []):
+            quote_type = (q.get("quoteType") or "").upper()
             if quote_type not in ("EQUITY", "ETF", "INDEX"):
                 continue
             results.append({
                 "type": "stock",
-                "symbol": quote.get("symbol"),
-                "name": quote.get("shortname") or quote.get("longname") or quote.get("symbol"),
-                "region": quote.get("exchDisp") or quote.get("exchange"),
+                "symbol": q.get("symbol"),
+                "name": q.get("shortname") or q.get("longname") or q.get("symbol"),
+                "region": q.get("exchDisp") or q.get("exchange"),
             })
     except Exception as e:
         print("Yahoo Finance search failed:", e)
@@ -408,7 +419,13 @@ def _fetch_stock_price(symbol):
         except Exception as e:
             print("Alpha Vantage quote failed, falling back to Yahoo:", e)
 
-    yahoo = _fetch_stock_price_yahoo(symbol)
+    try:
+        yahoo = _fetch_stock_price_yahoo(symbol)
+    except Exception as e:
+        # Unknown/invalid symbols make Yahoo respond with 404/400; surface a
+        # clean error message instead of the raw "404 Client Error ..." text.
+        print("Yahoo Finance quote failed:", e)
+        yahoo = None
     if yahoo:
         return yahoo
     if ALPHA_VANTAGE_API_KEY:
@@ -463,6 +480,19 @@ def _request_redirect_uri(handler):
     return f"{scheme}://{host}/auth/google/callback"
 
 
+def _prune_oauth_states():
+    """Drop pending OAuth state entries older than 10 minutes.
+
+    Each /auth/google click adds an entry; it is only popped when the OAuth
+    round-trip completes. Users who click 'Connect' and never finish (closed
+    tab, declined earlier) would otherwise accumulate entries forever.
+    """
+    cutoff = time.time() - 600
+    stale = [s for s, entry in _pending_oauth_states.items() if entry.get("ts", 0) < cutoff]
+    for s in stale:
+        _pending_oauth_states.pop(s, None)
+
+
 def _google_oauth_error_hint(raw_error):
     """Map raw Google OAuth errors to something a user can act on."""
     text = (raw_error or "").strip()
@@ -490,6 +520,18 @@ def _google_oauth_error_hint(raw_error):
     for key, hint in hints.items():
         if key in lowered:
             return hint
+    # Internal (library-level) errors must not leak raw tracebacks to the
+    # settings page — show an actionable line instead.
+    internal_markers = (
+        "typeerror", "valueerror", "attributeerror", "keyerror",
+        "traceback (most recent call last)", "oauthlib.",
+        "got multiple values", "unexpected keyword",
+    )
+    if any(marker in lowered for marker in internal_markers):
+        return (
+            "Google sign-in failed internally. Try connecting again; if it keeps "
+            "failing, restart server.py and check its console output."
+        )
     return text or "Unknown Google OAuth error."
 
 
@@ -501,8 +543,17 @@ def _load_settings():
 
 
 def _save_settings(data):
-    with open(SETTINGS_FILE, "w") as f:
+    """Write settings atomically (temp file + rename).
+
+    The server is threaded: /save, token refreshes and /load can overlap, and
+    both dashboard processes re-read the file concurrently (hot-reload). Writing
+    in place could let a reader see a half-written file; os.replace is atomic
+    on Windows (NTFS) so readers only ever see the old or the complete file.
+    """
+    tmp = SETTINGS_FILE + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(data, f, indent=2)
+    os.replace(tmp, SETTINGS_FILE)
 
 
 def _store_google_tokens(credentials):
@@ -555,7 +606,7 @@ def _disconnect_google():
     _save_settings(settings)
 
 
-SENSITIVE_PATH_PARTS = (".env", "client_secret", "settings.json")
+SENSITIVE_PATH_PARTS = (".env", "client_secret", "settings.json", "__pycache__")
 
 
 def _is_sensitive_path(path: str) -> bool:
@@ -563,12 +614,13 @@ def _is_sensitive_path(path: str) -> bool:
 
     SimpleHTTPRequestHandler serves everything it can reach, so without this
     guard anyone on localhost could download settings.json (contains the Google
-    refresh token), client_secret.json, the .py sources, etc.
+    refresh token), client_secret.json, the .py sources, etc. Compiled .pyc
+    files effectively contain the same source, so they are blocked too.
     """
     p = path.lower()
     if any(part in p for part in SENSITIVE_PATH_PARTS):
         return True
-    if p.endswith((".json", ".py", ".log")):
+    if p.endswith((".json", ".py", ".pyc", ".log")):
         return True
     # Any hidden file/directory segment (e.g. /.well-known is fine, /__pycache__ is not)
     if any(seg.startswith(".") and seg not in (".", "..") for seg in path.split("/")):
@@ -588,6 +640,10 @@ def _write_json_response(handler, status_code, payload):
 
 def _validate_settings(data):
     widgets = data.get("widgets") or {}
+    if not isinstance(widgets, dict):
+        # A manual/API caller could send any JSON type for `widgets`; treat it
+        # as empty instead of crashing on .items() (would surface as HTTP 500).
+        widgets = {}
     checked_widgets = [name for name, enabled in widgets.items() if enabled]
     if not checked_widgets:
         return "Please select at least one widget."
@@ -595,18 +651,21 @@ def _validate_settings(data):
     theme_mode = data.get("themeMode")
     if theme_mode not in ("preset", "custom"):
         return "Please select a theme."
-    if theme_mode == "preset" and not (data.get("theme") or "").strip():
+    if theme_mode == "preset" and not str(data.get("theme") or "").strip():
         return "Please select a preset theme."
-    if theme_mode == "custom" and not (data.get("customColor") or "").strip():
+    if theme_mode == "custom" and not str(data.get("customColor") or "").strip():
         return "Please choose a custom color."
 
     use_ip_location = bool(data.get("useIpLocation"))
-    location = (data.get("location") or "").strip()
+    location = str(data.get("location") or "").strip()
+    coordinates = data.get("coordinates")
+    if not isinstance(coordinates, dict):
+        coordinates = None
     if not use_ip_location and not location:
         return "Please enter a location or enable IP location."
-    if not use_ip_location and not data.get("coordinates"):
+    if not use_ip_location and not coordinates:
         return "Location coordinates are missing."
-    if use_ip_location and not data.get("coordinates"):
+    if use_ip_location and not coordinates:
         return "IP location coordinates are missing."
     return None
 
@@ -650,12 +709,48 @@ def _launch_dashboard():
         return False, str(exc)
 
 
+# Cross-origin browser reads are only allowed for this app's own pages: the
+# website (served from :8000) and the Streamlit web dashboard (:8501). Every
+# other origin gets no CORS headers, so a random website the user is browsing
+# cannot read responses like /load (which contains the Google refresh token)
+# via fetch() from their browser. Same-origin fetches never need CORS.
+CORS_ALLOWED_ORIGINS = (
+    "http://localhost:8000", "http://127.0.0.1:8000",
+    "http://localhost:8501", "http://127.0.0.1:8501",
+)
+
+
 class Handler(SimpleHTTPRequestHandler):
+    # Declare UTF-8 explicitly: without a charset in Content-Type some HTTP
+    # clients (curl, requests, older browsers without meta-sniffing) render
+    # em-dashes and emoji on the pages as mojibake.
+    extensions_map = {
+        **SimpleHTTPRequestHandler.extensions_map,
+        ".html": "text/html; charset=utf-8",
+        ".js": "text/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".md": "text/markdown; charset=utf-8",
+    }
+
+    def __init__(self, *args, **kwargs):
+        # Serve the website from the script's directory, not the process CWD.
+        # Without this, `python C:\...\server.py` started from any other
+        # folder (VS Code task, autostart, scheduler) serves a 404 site while
+        # the API endpoints still respond — very confusing to debug.
+        super().__init__(*args, directory=os.path.dirname(os.path.abspath(__file__)), **kwargs)
+
     def send_cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
+        origin = (self.headers.get("Origin") or "").strip()
+        if origin in CORS_ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+        # Deliberately no wildcard: a missing CORS header makes cross-origin
+        # responses unreadable in browsers, which is exactly what we want for
+        # all other origins. Non-browser clients are unaffected.
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -745,9 +840,11 @@ class Handler(SimpleHTTPRequestHandler):
                 include_granted_scopes="true",
                 prompt="consent",
             )
+            _prune_oauth_states()
             _pending_oauth_states[state] = {
                 "code_verifier": flow.code_verifier,
                 "redirect_uri": redirect_uri,
+                "ts": time.time(),
             }
             _write_json_response(self, 200, {"url": auth_url})
 
@@ -767,7 +864,11 @@ class Handler(SimpleHTTPRequestHandler):
             redirect_uri = pending.get("redirect_uri") if pending else _request_redirect_uri(self)
             try:
                 flow = _build_google_flow(code_verifier=code_verifier, redirect_uri=redirect_uri)
-                flow.fetch_token(code=code, redirect_uri=redirect_uri)
+                # Do NOT pass redirect_uri here: google_auth_oauthlib >= 0.8
+                # forwards kwargs to requests_oauthlib, which already injects the
+                # flow's own redirect_uri. A second value raises
+                # "got multiple values for keyword argument 'redirect_uri'".
+                flow.fetch_token(code=code)
                 _store_google_tokens(flow.credentials)
             except Exception as e:
                 self._redirect_to_settings(f"google_error={quote(_google_oauth_error_hint(str(e)))}")
@@ -868,7 +969,25 @@ class Handler(SimpleHTTPRequestHandler):
                 _write_json_response(self, 200, {"messages": messages})
             except Exception as e:
                 error_text = str(e)
-                if "insufficient" in error_text.lower() or "403" in error_text:
+                lowered = error_text.lower()
+                if (
+                    "precondition check failed" in lowered
+                    or "failedprecondition" in lowered
+                ):
+                    # Google returned FAILED_PRECONDITION: this happens when the
+                    # authorized Google identity has no Gmail mailbox (e.g. an
+                    # @freenet.de or other non-Google address registered as a
+                    # Google account). Calendar still works for those accounts,
+                    # Gmail API never does. Surfacing the reason beats a bare 500.
+                    _write_json_response(self, 400, {
+                        "error": (
+                            "No Gmail mailbox on this Google account.\n"
+                            "The Messages widget needs an account with Gmail "
+                            "(@gmail.com or a Workspace mailbox). Please connect "
+                            "such an account in Settings, or disable this widget."
+                        )
+                    })
+                elif "insufficient" in lowered or "403" in error_text:
                     _write_json_response(self, 403, {
                         "error": "Missing Gmail permission. Please disconnect and reconnect Google to grant access to your inbox."
                     })

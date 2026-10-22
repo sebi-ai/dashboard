@@ -115,6 +115,7 @@ Calendar and Gmail share a **single** OAuth client and a single consent screen (
 - **`redirect_uri_mismatch`** — the callback URL used by the app is not registered for that client. The server derives the callback URL from the address you actually open (e.g. `http://localhost:8000/auth/google/callback`), so add exactly that URL under the client's **Authorized redirect URIs**.
 - **`access_denied`** — you pressed cancel on the consent screen. Just try again and allow access.
 - **`403` / "Missing Gmail permission"** — an older connection was authorized without the Gmail scope. Use **Disconnect** and connect again; the fresh consent screen asks for both Calendar and Gmail.
+- **`400 failedPrecondition` / "Precondition check failed" (Messages widget only)** — the connected Google identity has **no Gmail mailbox**. This is common for accounts registered with a non-Google address (e.g. `@freenet.de`, `@t-online.de`): Calendar works for them, but Google refuses every Gmail API call. Connect a real Gmail account (`@gmail.com` or a Workspace mailbox) for the Messages widget, or disable it in Settings.
 
 If you change the port, update the redirect URI accordingly (e.g. `http://localhost:8001/auth/google/callback`) both in Google Cloud Console and in `GOOGLE_REDIRECT_URI`.
 

@@ -150,6 +150,54 @@ THEMES = {
 SERVER_URL = "http://localhost:8000"
 
 
+def _fetch_open_meteo_current(coords, attempts=3, timeout=8):
+    """Fetch current weather from open-meteo with brief retries.
+
+    Transient connection resets (Wi-Fi blips, antivirus web proxies, bursty
+    startup timing) used to surface raw exception text such as
+    "Error: HTTPSConnectionPool(host='api.open-meteo..." in the weather
+    widget. Retrying a few times with a short backoff silently absorbs those
+    blips. Returns the parsed fields as a dict; raises the last
+    ``requests.exceptions.RequestException`` when every attempt fails, so the
+    caller decides how to present the outage.
+    """
+    lat = coords.get("lat") or coords.get("latitude") or 48.137
+    lon = coords.get("lon") or coords.get("longitude") or 11.575
+    last_exc = None
+    for attempt in range(attempts):
+        try:
+            r = requests.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current": (
+                        "temperature_2m,weathercode,"
+                        "windspeed_10m,relative_humidity_2m,apparent_temperature"
+                    ),
+                    "wind_speed_unit": "kmh",
+                    "timezone": "auto",
+                },
+                timeout=timeout,
+            )
+            r.raise_for_status()
+            cur = r.json().get("current", {})
+            desc, icon = WEATHER_CODES.get(cur.get("weathercode", 0), ("Unknown", "?"))
+            return {
+                "temp": cur.get("temperature_2m", "--"),
+                "feels": cur.get("apparent_temperature", "--"),
+                "desc": desc,
+                "icon": icon,
+                "wind": cur.get("windspeed_10m", "--"),
+                "humidity": cur.get("relative_humidity_2m", "--"),
+            }
+        except requests.exceptions.RequestException as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(0.8 * (attempt + 1))
+    raise last_exc
+
+
 def settings_file_path() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
@@ -768,44 +816,40 @@ class WeatherWidget(BaseWidget):
 
     def fetch_data(self):
         if not HAS_REQUESTS:
+            self.ui(lambda: self.lbl_desc.config(text="requests not installed"))
             return
-        coords = self.settings.get("coordinates") or {}
-        lat = coords.get("lat") or coords.get("latitude") or 48.137
-        lon = coords.get("lon") or coords.get("longitude") or 11.575
         location_name = self.settings.get("location", "")
 
         try:
-            r = requests.get(
-                "https://api.open-meteo.com/v1/forecast",
-                params={
-                    "latitude": lat,
-                    "longitude": lon,
-                    "current": (
-                        "temperature_2m,weathercode,"
-                        "windspeed_10m,relative_humidity_2m,apparent_temperature"
-                    ),
-                    "wind_speed_unit": "kmh",
-                    "timezone": "auto",
-                },
-                timeout=10,
-            )
-            r.raise_for_status()
-            cur = r.json().get("current", {})
-
-            temp = cur.get("temperature_2m", "--")
-            feels = cur.get("apparent_temperature", "--")
-            code = cur.get("weathercode", 0)
-            wind = cur.get("windspeed_10m", "--")
-            humidity = cur.get("relative_humidity_2m", "--")
-            desc, icon = WEATHER_CODES.get(code, ("Unknown", "?"))
+            data = _fetch_open_meteo_current(self.settings.get("coordinates") or {})
             self.ui(lambda: self._show_weather(
-                temp, feels, desc, icon, wind, humidity, location_name
+                data["temp"], data["feels"], data["desc"], data["icon"],
+                data["wind"], data["humidity"], location_name
             ))
-        except Exception as exc:
-            err = str(exc)[:40]
-            self.ui(lambda: self.lbl_desc.config(text=f"Error: {err}"))
+        except requests.exceptions.RequestException:
+            self.ui(self._show_weather_offline)
+        except Exception:
+            self.ui(lambda: self.lbl_desc.config(text="Weather error."))
+
+    def _show_weather_offline(self):
+        last = getattr(self, "_last_weather", None)
+        if last:
+            # Keep showing the last known values (marked stale) instead of a raw
+            # error dump; the next automatic refresh retries anyway.
+            self._show_weather(
+                last["temp"], last["feels"], last["desc"], last["icon"],
+                last["wind"], last["humidity"], last["location"],
+            )
+            self.lbl_desc.config(text=f"⚠ {last['desc']} (offline)")
+        else:
+            self.lbl_temp.config(text="--°C")
+            self.lbl_desc.config(text="Weather service not reachable.\nRetrying…")
 
     def _show_weather(self, temp, feels, desc, icon, wind, humidity, location_name):
+        self._last_weather = {
+            "temp": temp, "feels": feels, "desc": desc, "icon": icon,
+            "wind": wind, "humidity": humidity, "location": location_name,
+        }
         self.lbl_temp.config(text=f"{icon} {temp}°C")
         self.lbl_desc.config(text=desc)
 
@@ -845,7 +889,7 @@ class CalendarWidget(BaseWidget):
                 return
             events = r.json().get("events", [])
             self.ui(lambda: self._render_events(events))
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.RequestException:
             self.ui(lambda: self._set_status("Server not reachable.\n→ Start server.py"))
         except Exception as exc:
             err = str(exc)[:50]
@@ -864,7 +908,7 @@ class CalendarWidget(BaseWidget):
                 start_fmt = dt.strftime("%m-%d %H:%M")
             except Exception:
                 start_fmt = start_raw[:10]
-            summary = ev.get("summary", "No title")[:35]
+            summary = (ev.get("summary") or "No title")[:35]
 
             row = tk.Frame(self.list_frame, bg=self.colors["widget_bg"])
             row.pack(fill="x", pady=3)
@@ -961,7 +1005,7 @@ class StockCryptoWidget(BaseWidget):
                 except Exception:
                     err = f"HTTP {r.status_code}"
                 self.ui(lambda: self._show_error(err[:40]))
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.RequestException:
             self.ui(lambda: self._show_error("→ Start server.py", price_text="Server off"))
         except Exception as exc:
             err = str(exc)[:40]
@@ -1002,11 +1046,16 @@ class NotificationsWidget(BaseWidget):
                 self.ui(lambda: self._set_status("No Gmail permission.\nPlease reconnect your account."))
                 return
             if r.status_code != 200:
-                self.ui(lambda: self._set_status(f"Server error: {r.status_code}"))
+                try:
+                    server_err = (r.json().get("error") or "").strip()
+                except Exception:
+                    server_err = ""
+                err = server_err or f"Server error: {r.status_code}"
+                self.ui(lambda: self._set_status(err))
                 return
             messages = r.json().get("messages", [])
             self.ui(lambda: self._render_messages(messages))
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.RequestException:
             self.ui(lambda: self._set_status("Server not reachable.\n→ Start server.py"))
         except Exception as exc:
             err = str(exc)[:50]
@@ -1194,6 +1243,11 @@ class CountdownWidget(BaseWidget):
             return
         try:
             target = datetime.fromisoformat(self._target_date)
+            if target.tzinfo is not None:
+                # tz-aware date (ISO string with Z or offset) → normalize to
+                # local naive time so the subtraction below cannot raise a
+                # TypeError (naive vs aware datetime).
+                target = target.astimezone().replace(tzinfo=None)
         except ValueError:
             self.lbl_cd.config(text="Invalid date")
             return
@@ -1517,42 +1571,49 @@ class Dashboard(tk.Tk):
 # The same widget logic (data fetching, layout, theme) is reused, but instead
 # of building Tk widgets we emit HTML that Streamlit renders in the browser.
 
-def _fetch_weather_data_for_render(settings):
-    """Standalone weather fetch used by the HTML renderer (mirrors WeatherWidget.fetch_data)."""
-    if not HAS_REQUESTS:
-        return {"error": "requests not installed"}
-    coords = settings.get("coordinates") or {}
-    lat = coords.get("lat") or coords.get("latitude") or 48.137
-    lon = coords.get("lon") or coords.get("longitude") or 11.575
-    location_name = settings.get("location", "")
+def _ttl_cache(seconds: float):
+    """Memoize a renderer fetch across Streamlit reruns.
+
+    Streamlit re-executes the whole script for every ``st_autorefresh`` tick —
+    module-level state does NOT survive reruns, so a plain dictionary cache
+    resets every time and each run re-hits the HTTP endpoints. With all
+    widgets enabled those sequential fetches take longer than the 5-second
+    interval, and overlapping slow reruns made the browser drop the
+    dashboard's iframe element entirely. ``st.cache_data`` persists across
+    runs per process, so runs stay fast and finish within the interval.
+    Outside a Streamlit context (e.g. plain-script tests) it is a passthrough.
+    """
     try:
-        r = requests.get(
-            "https://api.open-meteo.com/v1/forecast",
-            params={
-                "latitude": lat,
-                "longitude": lon,
-                "current": "temperature_2m,weathercode,windspeed_10m,relative_humidity_2m,apparent_temperature",
-                "wind_speed_unit": "kmh",
-                "timezone": "auto",
-            },
-            timeout=10,
-        )
-        r.raise_for_status()
-        cur = r.json().get("current", {})
-        desc, icon = WEATHER_CODES.get(cur.get("weathercode", 0), ("Unknown", "?"))
-        return {
-            "temp": cur.get("temperature_2m", "--"),
-            "feels": cur.get("apparent_temperature", "--"),
-            "desc": desc,
-            "icon": icon,
-            "wind": cur.get("windspeed_10m", "--"),
-            "humidity": cur.get("relative_humidity_2m", "--"),
-            "location": location_name,
-        }
-    except Exception as exc:
-        return {"error": str(exc)[:40]}
+        import streamlit as st
+    except ImportError:
+        st = None
+    if st is not None:
+        return st.cache_data(ttl=seconds, max_entries=8, show_spinner=False)
+
+    def passthrough(fn):
+        return fn
+
+    return passthrough
 
 
+@_ttl_cache(15.0)
+def _fetch_weather_data_for_render(settings):
+    """Standalone weather fetch used by the HTML renderer (mirrors WeatherWidget.fetch_data).
+
+    Raises the underlying requests exception on failure instead of returning an
+    error dict: ``st.cache_data`` does not cache raised exceptions, so a
+    transient outage never sticks in the 15s cache — the next autorefresh tick
+    retries immediately. ``render_weather_html`` turns the exception into a
+    friendly message.
+    """
+    if not HAS_REQUESTS:
+        raise RuntimeError("requests not installed")
+    data = _fetch_open_meteo_current(settings.get("coordinates") or {}, attempts=2, timeout=4)
+    data["location"] = settings.get("location", "")
+    return data
+
+
+@_ttl_cache(15.0)
 def _fetch_calendar_for_render():
     try:
         r = requests.get(f"{SERVER_URL}/calendar/events", timeout=6)
@@ -1561,33 +1622,18 @@ def _fetch_calendar_for_render():
         if r.status_code != 200:
             return {"status": "error", "code": r.status_code}
         return {"events": r.json().get("events", [])}
-    except requests.exceptions.ConnectionError:
+    except requests.exceptions.RequestException:
         return {"status": "server_off"}
 
 
+@_ttl_cache(15.0)
 def _fetch_stock_crypto_for_render(settings):
+    if not HAS_REQUESTS:
+        return {"error": "requests not installed"}
     sel = settings.get("stockCryptoSelection") or {}
     symbol = sel.get("symbol", "BTC")
     name = sel.get("name", "Bitcoin")
     stype = sel.get("type", "crypto")
-    if ALPHA_VANTAGE_API_KEY := os.environ.get("ALPHA_VANTAGE_API_KEY"):
-        try:
-            r = requests.get(
-                f"{SERVER_URL}/finance/price",
-                params={"type": stype, "symbol": symbol, "name": name},
-                timeout=10,
-            )
-            if r.status_code == 200:
-                data = r.json()
-                return {"price": data.get("price"), "change": data.get("change") or 0,
-                        "marketCap": data.get("marketCap"), "symbol": symbol, "name": name, "type": stype}
-            try:
-                err = r.json().get("error", f"HTTP {r.status_code}")
-            except Exception:
-                err = f"HTTP {r.status_code}"
-            return {"error": err[:40]}
-        except requests.exceptions.ConnectionError:
-            return {"error": "→ Start server.py", "price_text": "Server off"}
     try:
         r = requests.get(
             f"{SERVER_URL}/finance/price",
@@ -1603,10 +1649,11 @@ def _fetch_stock_crypto_for_render(settings):
         except Exception:
             err = f"HTTP {r.status_code}"
         return {"error": err[:40]}
-    except requests.exceptions.ConnectionError:
+    except requests.exceptions.RequestException:
         return {"error": "→ Start server.py", "price_text": "Server off"}
 
 
+@_ttl_cache(15.0)
 def _fetch_notifications_for_render():
     try:
         r = requests.get(f"{SERVER_URL}/notifications/messages", timeout=8)
@@ -1615,20 +1662,18 @@ def _fetch_notifications_for_render():
         if r.status_code == 403:
             return {"status": "no_permission"}
         if r.status_code != 200:
+            try:
+                server_err = (r.json().get("error") or "").strip()
+            except Exception:
+                server_err = ""
+            if server_err:
+                # Server knows the cause (e.g. account has no Gmail mailbox) —
+                # surface its multiline text instead of a bare status code.
+                return {"status": "server_message", "code": r.status_code, "text": server_err}
             return {"status": "error", "code": r.status_code}
         return {"messages": r.json().get("messages", [])}
-    except requests.exceptions.ConnectionError:
+    except requests.exceptions.RequestException:
         return {"status": "server_off"}
-
-
-WIDGET_RENDERERS = {
-    "dateTime": "render_date_time_html",
-    "weather": "render_weather_html",
-    "calendar": "render_calendar_html",
-    "stockCrypto": "render_stock_crypto_html",
-    "notifications": "render_notifications_html",
-    "countdown": "render_countdown_html",
-}
 
 
 def _inject_css(colors):
@@ -1649,8 +1694,16 @@ def _inject_css(colors):
     #dashboard-header h1 {{ margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 2px; color: {header_text}; }}
     #dashboard-header .accent-line {{ height: 2px; width: 72px; background: {accent}; margin-top: 4px; }}
     #dashboard-content {{ position: relative; width: 100%; height: calc(100vh - 118px); margin-top: 14px; overflow: hidden; }}
-    #dashboard-footer {{ display: flex; justify-content: space-between; align-items: center; padding: 8px 0 5px; border-top: 1px solid rgba(255,255,255,0.08); margin-top: 8px; font-size: 9px; color: {muted}; }}
-    .widget-card {{ position: absolute; border-radius: 30px; border: 1px solid {border}; padding: 18px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; background: {widget_bg}; }}
+    #dashboard-footer {{
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 8px 0 5px; border-top: 1px solid rgba(255,255,255,0.08);
+        margin-top: 8px; font-size: 9px; color: {muted};
+    }}
+    .widget-card {{
+        position: absolute; border-radius: 30px; border: 1px solid {border};
+        padding: 18px; box-sizing: border-box; overflow: hidden;
+        display: flex; flex-direction: column; background: {widget_bg};
+    }}
     .widget-header {{ display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }}
     .widget-header-icon {{ font-size: 14px; }}
     .widget-header-title {{ font-size: 12px; font-weight: 700; letter-spacing: 1px; color: {header_text}; }}
@@ -1706,7 +1759,12 @@ def render_date_time_html(colors, settings, big, scale, content_h_px):
 def render_weather_html(colors, settings, big, scale):
     header_text = get_contrast_aware_text_color(colors["widget_bg"], colors["accent"])
     desc_fs = max(int((15 if big else 12) * scale), 10)
-    result = _fetch_weather_data_for_render(settings)
+    try:
+        result = _fetch_weather_data_for_render(settings)
+    except Exception:
+        # Never show raw exception text (e.g. "HTTPSConnectionPool(host=...");
+        # the failure is not cached, so the next autorefresh tick retries.
+        result = None
     html = f"""
     <div class="widget-header">
         <span class="widget-header-icon">🌤</span>
@@ -1715,10 +1773,17 @@ def render_weather_html(colors, settings, big, scale):
     <div class="widget-header-line" style="background:{colors['accent']}"></div>
     <div class="widget-spacer"></div>
     """
-    if "error" in result:
+    if result is None:
         temp_text = "--°C"
-        desc_text = f"Error: {result['error']}"
-        loc_text = ""; details_text = ""
+        desc_text = "Weather service not reachable."
+        loc_text = ""
+        details_text = ""
+    elif "error" in result:
+        # Defensive: fetchers no longer return error dicts, but keep a safe fallback.
+        temp_text = "--°C"
+        desc_text = "Weather service not reachable."
+        loc_text = ""
+        details_text = ""
     else:
         temp_text = f"{result['icon']} {result['temp']}°C"
         desc_text = result['desc']
@@ -1726,7 +1791,8 @@ def render_weather_html(colors, settings, big, scale):
             loc_text = f"📍 {result['location']}" if result['location'] else ""
             details_text = f"Feels like {result['feels']}°C • 💨 {result['wind']} km/h • 💧 {result['humidity']}%"
         else:
-            loc_text = ""; details_text = ""
+            loc_text = ""
+            details_text = ""
     temp_fs = max(int((44 if big else 32) * scale), 20)
     html += f'<div class="widget-temp" style="font-size:{temp_fs}px;color:{colors["text"]}">{temp_text}</div>'
     html += f'<div class="widget-text-center" style="font-size:{desc_fs}px;color:{header_text}">{desc_text}</div>'
@@ -1833,6 +1899,9 @@ def render_notifications_html(colors, settings, big, scale):
         html += f'<div class="widget-status" style="color:{colors["muted"]}">No Gmail permission.\nPlease reconnect your account.</div>'
     elif result.get("status") == "server_off":
         html += f'<div class="widget-status" style="color:{colors["muted"]}">Server not reachable.\n→ Start server.py</div>'
+    elif result.get("status") == "server_message":
+        msg_text = (result.get("text") or "Server error.")
+        html += f'<div class="widget-status" style="color:{colors["muted"]}">{msg_text}</div>'
     elif result.get("status") == "error":
         html += f'<div class="widget-status" style="color:{colors["muted"]}">Server error: {result.get("code")}</div>'
     else:
@@ -1882,6 +1951,11 @@ def render_countdown_html(colors, settings, big, scale):
     else:
         try:
             target = datetime.fromisoformat(target_date)
+            if target.tzinfo is not None:
+                # tz-aware date → normalize to local naive time (same rule as
+                # the Tk countdown) so the subtraction below cannot raise a
+                # TypeError (naive vs aware datetime).
+                target = target.astimezone().replace(tzinfo=None)
             now = datetime.now()
             diff = target - now
             if diff.total_seconds() <= 0:
@@ -1909,7 +1983,7 @@ def render_dashboard_html(settings):
     """Render the full dashboard as HTML (for use under Streamlit)."""
     colors = extract_colors(settings)
     css = _inject_css(colors)
-    
+
     widgets_en = settings.get("widgets", {})
     enabled = [k for k, v in widgets_en.items() if v]
     if not enabled:
@@ -1917,13 +1991,13 @@ def render_dashboard_html(settings):
     order = settings.get("widgetOrder", [])
     ordered = [k for k in order if k in enabled]
     enabled = ordered + [k for k in enabled if k not in ordered]
-    
+
     # Use a fixed content height for the web (1080px screen equivalent)
     content_h_px = max(200, 1080 - 145)
     rects = resolve_widget_layout(enabled, settings.get("widgetLayout"))
     margin = 0.006
     content_html = '<div id="dashboard-content">'
-    
+
     render_map = {
         "dateTime": render_date_time_html,
         "weather": render_weather_html,
@@ -1932,7 +2006,7 @@ def render_dashboard_html(settings):
         "notifications": render_notifications_html,
         "countdown": render_countdown_html,
     }
-    
+
     for key in enabled:
         rect = rects.get(key)
         if not rect:
@@ -1943,28 +2017,37 @@ def render_dashboard_html(settings):
         card_h_px = content_h_px * rect["h"] / 100
         natural = (NATURAL_HEIGHT.get(key, 150) + (BIG_EXTRA_HEIGHT if big else 0)) * 1.10
         scale = max(0.8, min(scale, card_h_px / natural, 2.6))
-        
+
+
         renderer = render_map.get(key)
         if not renderer:
             continue
-        
+
+
         if key == "dateTime":
             widget_html = renderer(colors, settings, big, scale, content_h_px)
         else:
             widget_html = renderer(colors, settings, big, scale)
-        
+
+
         left = rect["x"] / 100 + margin
         top = rect["y"] / 100 + margin
         width = rect["w"] / 100 - 2 * margin
         height = rect["h"] / 100 - 2 * margin
-        
+
+
+        card_style = (
+            f"background:{colors['widget_bg']};border-color:{colors['border']};"
+            f"left:{left * 100}%;top:{top * 100}%;"
+            f"width:{width * 100}%;height:{height * 100}%"
+        )
         content_html += f"""
-        <div class="widget-card" data-key="{key}" style="background:{colors['widget_bg']};border-color:{colors['border']};left:{left * 100}%;top:{top * 100}%;width:{width * 100}%;height:{height * 100}%;">
+        <div class="widget-card" data-key="{key}" style="{card_style}">
             {widget_html}
         </div>
         """
     content_html += "</div>"
-    
+
     footer_loc = settings.get("location", "")
     footer_html = f"""
     <div id="dashboard-footer">
@@ -1972,7 +2055,7 @@ def render_dashboard_html(settings):
         <span id="footer-location" style="color:{colors['muted']}">{'📍 ' + footer_loc if footer_loc else ''}</span>
     </div>
     """
-    
+
     full_html = f"""
     <div id="dashboard-header">
         <h1>▣ DASHBOARD</h1>
@@ -1981,7 +2064,7 @@ def render_dashboard_html(settings):
     {content_html}
     {footer_html}
     """
-    
+
     return css, full_html
 
 
@@ -1992,6 +2075,51 @@ try:
     HAS_STREAMLIT = True
 except ImportError:
     HAS_STREAMLIT = False
+
+
+def _running_under_streamlit() -> bool:
+    """True only when THIS process is executing inside `streamlit run`.
+
+    HAS_STREAMLIT merely says the *library* is installed. `python dashboard.py`
+    (the desktop dashboard started by /launch, start_dashboard.bat, or by hand)
+    also imports streamlit fine — but there is no Streamlit runtime in that
+    process, so calling _run_streamlit() then would emit bare-mode warnings
+    ("to view this Streamlit app on a browser, run it with ..."), never open
+    the Tk window, and exit. Detect an active runtime instead.
+    """
+    if not HAS_STREAMLIT:
+        return False
+
+    # Primary: Streamlit >= 1.12 exposes Runtime.exists() — True exactly when
+    # a runtime instance is running (i.e. we are inside `streamlit run`).
+    try:
+        from streamlit.runtime import Runtime
+        if Runtime.exists():
+            return True
+    except Exception:
+        pass
+
+    # Fallback for other versions: ScriptRunContext is only present when the
+    # script runs under Streamlit's runner thread.
+    for module_name in (
+        "streamlit.runtime.scriptrunner_utils.script_run_context",
+        "streamlit.runtime.scriptrunner",
+    ):
+        try:
+            module = __import__(module_name, fromlist=["get_script_run_ctx"])
+            get_ctx = getattr(module, "get_script_run_ctx", None)
+            if get_ctx is not None:
+                return get_ctx() is not None
+        except ImportError:
+            continue
+        except Exception:
+            return False
+
+    # Cannot verify a runtime → prefer the desktop dashboard. (Under a version
+    # too old/new for both checks the web path could degrade, but every
+    # supported streamlit version satisfies at least one of the two checks.)
+    return False
+
 
 # `st.iframe` only exists in Streamlit >= 1.56; the project's requirements allow
 # >= 1.40, so fall back to the (older but universal) components.v1 API there.
@@ -2010,7 +2138,7 @@ def _embed_dashboard_html(full_html: str) -> None:
         # height="stretch" fills the whole viewport — a fixed pixel height
         # (e.g. the old height=1080) crops the dashboard on taller screens
         # and leaves a visible block of Streamlit Chrome below.
-        st.iframe(full_html, height="stretch", alt="Dashboard")
+        st.iframe(full_html, height="stretch")
         return
 
     # Older Streamlit: scrolling on the page itself is off and the outer
@@ -2052,6 +2180,12 @@ def _run_streamlit():
         .stApp [data-testid="stBottomBlock"] { display: none; }
         body { margin: 0; padding: 0; }
         .block-container { padding: 0; margin: 0; max-width: none; }
+        section.stMain > div { height: 100vh !important; }
+        section.stMain div[data-testid="stMainBlockContainer"] { height: 100vh !important; padding: 0 !important; margin: 0 !important; max-width: none !important; }
+        section.stMain { overflow: hidden; }
+        section.stMain div[data-testid="stVerticalBlock"] { gap: 0 !important; }
+        section.stMain div[data-testid="stElementContainer"]:has(> iframe[srcdoc]) { height: 100vh !important; min-height: 100vh !important; }
+        iframe[data-testid="stIFrame"][srcdoc] { height: 100vh !important; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -2092,8 +2226,10 @@ if __name__ == "__main__":
         print(" http://localhost:8000, before you start dashboard.py.")
         print(" The dashboard will run with default settings regardless.")
 
-    # If Streamlit is available and we're running under it, render as HTML
-    if HAS_STREAMLIT:
+    # If a Streamlit runtime is active (started via `streamlit run dashboard.py`),
+    # render the web dashboard; otherwise this is a direct launch — open the
+    # FULLSCREEN TK dashboard on the desktop.
+    if _running_under_streamlit():
         _run_streamlit()
     else:
         app = Dashboard()
