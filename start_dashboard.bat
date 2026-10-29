@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-python -m streamlit run dashboard.py --server.port=8501
+python -m streamlit run dashboard.py --server.port=8501 --server.baseUrlPath=app --server.headless=true
 pause

@@ -16,7 +16,14 @@ const disconnectMailBtn = document.getElementById('disconnect-google-mail-btn');
 const notificationsStatus = document.getElementById('notifications-connection-status');
 const messagesList = document.getElementById('notifications-messages-list');
 
-let stockCryptoSelection = null;
+let stockCryptoSelections = [];
+
+// Settings are saved PER BROWSER in localStorage — never on the server, so no
+// visitor can ever change another browser's dashboard. On the owner machine
+// (localhost/127.0.0.1) an extra copy is POSTed to /save so the Tk desktop
+// dashboard keeps working off settings.json.
+const SETTINGS_STORE_KEY = "dashboardSettings";
+const SETTINGS_MAX_STOCKS = 6;
 
 const WIDGET_KEY_TO_CHECKBOX = {
   weather: "weather-widget",
@@ -33,12 +40,136 @@ const WIDGET_KEY_TO_LABEL = {
   notifications: "Notifications",
   countdown: "Countdown to Date",
   calendar: "Calendar",
-  stockCrypto: "Stock/Crypto Prices",
+  stockCrypto: "Stocks & Crypto",
 };
 
-// Google Calendar + Gmail are connected through the local server (server.py).
-// The server owns the OAuth flow and stores the tokens in settings.json, so
-// both this website and the Python dashboard (dashboard.py) can use them.
+// Google Calendar + Gmail: the login lives ONLY in this browser (localStorage).
+// server.py never stores it — it exchanges the OAuth code for the browser that
+// started the connect and then just proxies data requests that carry this
+// browser's own token. Different browsers therefore only ever see their own
+// account, and nothing about the login is saved on the server.
+const GOOGLE_STORE_KEY = "dashboardGoogleTokens";
+const TOKEN_EXPIRY_MARGIN_MS = 60000;
+
+function getGoogleTokens() {
+  try {
+    const raw = localStorage.getItem(GOOGLE_STORE_KEY);
+    const tokens = raw ? JSON.parse(raw) : null;
+    return tokens && tokens.refresh_token ? tokens : null;
+  } catch (e) {
+    // The stored value cannot be parsed as JSON — e.g. the garbage
+    // "[object Object]" an older server version wrote into localStorage.
+    // Drop it so the settings page shows "Not connected" (instead of
+    // pretending a broken entry exists) and the next connect stores a
+    // clean login.
+    try { localStorage.removeItem(GOOGLE_STORE_KEY); } catch (e2) { /* ignore */ }
+    return null;
+  }
+}
+
+function storeGoogleTokens(tokens) {
+  localStorage.setItem(GOOGLE_STORE_KEY, JSON.stringify(tokens));
+}
+
+function clearGoogleTokens() {
+  localStorage.removeItem(GOOGLE_STORE_KEY);
+}
+
+function hasGoogleTokens() {
+  return getGoogleTokens() !== null;
+}
+
+let tokenRefreshPromise = null;
+
+async function getAccessToken(force = false) {
+  const tokens = getGoogleTokens();
+  if (!tokens) return null;
+  if (!force && tokens.access_token && tokens.expiryMs &&
+      Date.now() < tokens.expiryMs - TOKEN_EXPIRY_MARGIN_MS) {
+    return tokens.access_token;
+  }
+  // Exchange the refresh token for a fresh access token. Single flight so
+  // parallel calls (widgets, settings previews) share one request.
+  if (!tokenRefreshPromise) {
+    tokenRefreshPromise = (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+        });
+        if (!res.ok) {
+          // 401 means this browser's login is revoked/dead — drop it locally
+          // and refresh the settings UI so it shows the connect button again.
+          if (res.status === 401) {
+            clearGoogleTokens();
+            if (typeof refreshCalendarStatus === "function") {
+              refreshCalendarStatus();
+              refreshNotificationsStatus();
+            }
+          }
+          return null;
+        }
+        const data = await res.json();
+        const updated = {
+          ...tokens,
+          access_token: data.access_token,
+          expiryMs: data.expiryMs,
+        };
+        if (data.refresh_token) updated.refresh_token = data.refresh_token;
+        storeGoogleTokens(updated);
+        return updated.access_token;
+      } finally {
+        tokenRefreshPromise = null;
+      }
+    })();
+  }
+  return tokenRefreshPromise;
+}
+
+// fetch() carrying this browser's token; refreshes once and retries on 401.
+// A missing login answers with the "not connected" text; a login that Google
+// rejects surfaces as the server's own 401 ("login expired — reconnect"),
+// so the UI can tell the two situations apart.
+async function authedFetch(url) {
+  const hadTokens = hasGoogleTokens();
+  let token = await getAccessToken();
+  if (!token) {
+    return {
+      ok: false,
+      status: 401,
+      json: async () => ({
+        error: hadTokens
+          ? "Google login expired. Reconnect in Settings."
+          : "Google is not connected in this browser.",
+      }),
+    };
+  }
+  let res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (res.status === 401) {
+    token = await getAccessToken(true);
+    if (!token) {
+      return {
+        ok: false,
+        status: 401,
+        json: async () => ({ error: "Google login expired. Reconnect in Settings." }),
+      };
+    }
+    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  }
+  return res;
+}
+
+function setListMessage(list, message) {
+  // Build with text nodes: error texts can carry third-party content and
+  // must never be parsed as HTML.
+  if (!list) return;
+  list.innerHTML = "";
+  const li = document.createElement("li");
+  li.textContent = message;
+  list.appendChild(li);
+}
+
 async function startGoogleConnect() {
  if (window.location.protocol === 'file:') {
  showNotification('ERROR: Open via http://localhost:8000, not by double-clicking the file!', 'error');
@@ -65,13 +196,11 @@ if (connectMailBtn) {
  connectMailBtn.addEventListener('click', startGoogleConnect);
 }
 
-async function disconnectGoogle() {
- try {
- await fetch(`${API_BASE}/calendar/disconnect`, { method: 'POST' });
- } catch (e) {
- // The token is removed server-side; ignore network errors here.
- }
- showNotification('Google account disconnected.');
+function disconnectGoogle() {
+ // Remove the login from THIS browser only; the server holds no copy, so
+ // other browsers (and their connected accounts) are unaffected.
+ clearGoogleTokens();
+ showNotification('Google account disconnected from this browser.');
  refreshCalendarStatus();
  refreshNotificationsStatus();
 }
@@ -84,14 +213,10 @@ if (disconnectMailBtn) {
  disconnectMailBtn.addEventListener('click', disconnectGoogle);
 }
 
-async function refreshCalendarStatus() {
+function refreshCalendarStatus() {
  if (!calendarStatus) return;
- try {
- const res = await fetch(`${API_BASE}/calendar/status`);
- const data = await res.json().catch(() => null);
- const connected = !!(res.ok && data && data.connected);
- if (connected) {
- calendarStatus.textContent = "Connected to Google Calendar.";
+ if (hasGoogleTokens()) {
+ calendarStatus.textContent = "Connected to Google Calendar (login stored in this browser).";
  if (connectBtn) connectBtn.style.display = "none";
  if (disconnectBtn) disconnectBtn.style.display = "inline-block";
  loadCalendarEvents();
@@ -101,17 +226,15 @@ async function refreshCalendarStatus() {
  if (disconnectBtn) disconnectBtn.style.display = "none";
  if (eventsList) eventsList.innerHTML = "";
  }
- } catch (e) {
- calendarStatus.textContent = "Server not reachable.";
- }
 }
 
 async function loadCalendarEvents() {
  if (!eventsList) return;
  try {
- const res = await fetch(`${API_BASE}/calendar/events`);
+ const res = await authedFetch(`${API_BASE}/calendar/events`);
  if (res.status === 401) {
- eventsList.innerHTML = "<li>Not connected to Google Calendar.</li>";
+ const data = await res.json().catch(() => null);
+ setListMessage(eventsList, data?.error || "Google is not connected in this browser.");
  return;
  }
  if (!res.ok) {
@@ -139,14 +262,10 @@ async function loadCalendarEvents() {
  }
 }
 
-async function refreshNotificationsStatus() {
+function refreshNotificationsStatus() {
  if (!notificationsStatus) return;
- try {
- const res = await fetch(`${API_BASE}/calendar/status`);
- const data = await res.json().catch(() => null);
- const connected = !!(res.ok && data && data.connected);
- if (connected) {
- notificationsStatus.textContent = "Connected to Google Mail.";
+ if (hasGoogleTokens()) {
+ notificationsStatus.textContent = "Connected to Google Mail (login stored in this browser).";
  if (connectMailBtn) connectMailBtn.style.display = "none";
  if (disconnectMailBtn) disconnectMailBtn.style.display = "inline-block";
  loadMessages();
@@ -156,17 +275,15 @@ async function refreshNotificationsStatus() {
  if (disconnectMailBtn) disconnectMailBtn.style.display = "none";
  if (messagesList) messagesList.innerHTML = "";
  }
- } catch (e) {
- notificationsStatus.textContent = "Server not reachable.";
- }
 }
 
 async function loadMessages() {
  if (!messagesList) return;
  try {
- const res = await fetch(`${API_BASE}/notifications/messages`);
+ const res = await authedFetch(`${API_BASE}/notifications/messages`);
  if (res.status === 401) {
- messagesList.innerHTML = "<li>Not connected to Google Mail.</li>";
+ const data = await res.json().catch(() => null);
+ setListMessage(messagesList, data?.error || "Google is not connected in this browser.");
  return;
  }
  if (res.status === 403) {
@@ -220,11 +337,53 @@ function handleGoogleRedirectParams() {
  }
 }
 
+function normalizeSelections(raw) {
+ if (Array.isArray(raw)) {
+ return raw.filter(x => x && x.symbol).slice(0, SETTINGS_MAX_STOCKS).map(x => ({
+ type: x.type || "stock",
+ symbol: String(x.symbol),
+ name: String(x.name || x.symbol),
+ id: x.id,
+ }));
+ }
+ // Back-compat: older saved settings hold a single object.
+ if (raw && raw.symbol) {
+ return [{
+ type: raw.type || "stock",
+ symbol: String(raw.symbol),
+ name: String(raw.name || raw.symbol),
+ id: raw.id,
+ }];
+ }
+ return [];
+}
+
+function showStorageNote() {
+ // Quiet hint that settings live in this browser now (shown once per session).
+ try { if (sessionStorage.getItem("storageNoteShown")) return; } catch (e) {}
+ try { sessionStorage.setItem("storageNoteShown", "1"); } catch (e) {}
+ showNotification("Using this browser's own settings.", "info");
+}
+
 async function loadSettings() {
+ // Per-browser settings first: this browser's own saved copy always wins.
+ // GET /load is only a fallback seed for first visits (it strips the Google
+ // secrets) — visitors start from the owner's defaults, then keep their own.
+ let s = null;
+ try { s = JSON.parse(localStorage.getItem(SETTINGS_STORE_KEY) || "null"); } catch (e) {}
+ if (s) { showStorageNote(); }
+ else {
  try {
  const res = await fetch(`${API_BASE}/load`);
  if (!res.ok) return;
- const s = await res.json();
+ s = await res.json();
+ } catch (e) {
+ console.log("No saved settings found.");
+ return;
+ }
+ }
+
+ try {
 
  if (s.location) document.getElementById("location").value = s.location;
  if (s.useIpLocation) {
@@ -264,16 +423,13 @@ async function loadSettings() {
  document.getElementById("custom-color").disabled =
  document.getElementById("theme-mode-preset").checked;
 
- if (s.stockCryptoSelection) {
- stockCryptoSelection = s.stockCryptoSelection;
- renderStockCryptoSelection();
- }
+ stockCryptoSelections = normalizeSelections(s.stockCryptoSelections);
+ if (stockCryptoSelections.length) renderStockCryptoSelections();
 
  } catch (e) {
  console.log("No saved settings found.");
  }
-}
-
+ }
 async function getCoordinates(locationName) {
  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=1`;
  const res = await fetch(url, { headers: { "Accept-Language": "en" } });
@@ -342,55 +498,29 @@ function startDashboard(e) {
 	// /webapp is a POST-only endpoint on server.py — a GET would 404 (static
 	// handler returns HTML, not JSON) which triggers the .catch below and shows
 	// a misleading "could not reach dashboard" error even though the server is
-	// up. Use POST so the server actually launches streamlit.
-	// Navigate the current window to the dashboard after the POST succeeds.
-	// Avoids opening an about:blank tab that users see before redirect.
+	// up. Use POST so the server actually starts/verifies the dashboard.
+	// The server only answers once the dashboard can really serve, so the tab
+	// below opens instantly — no polling, no waiting screens.
+	// The URL is relative (/app/), so this works on localhost AND when hosted
+	// on a real domain: server.py serves the dashboard on the same port.
 	fetch("/webapp", { method: "POST", credentials: "include" })
-		.then(res => {
-			if (!res.ok) {
-				throw new Error(`Server returned HTTP ${res.status}`);
-			}
-			return res.json();
-		})
+		.then(res => res.json())
 		.then(data => {
 			if (data.status === "ok") {
-				// Streamlit was just launched but needs a few seconds to be ready.
-				// Poll the Streamlit health endpoint until it responds, then redirect.
-				const dashboardUrl = "http://localhost:8501";
-				const maxAttempts = 30; // up to ~15s
-				let attempts = 0;
-				function pollAndRedirect() {
-					fetch(dashboardUrl + "/_stcore/health", { method: "GET" })
-						.then(res => {
-							if (res.ok) {
-								window.location.href = dashboardUrl;
-							} else if (attempts < maxAttempts) {
-								attempts++;
-								setTimeout(pollAndRedirect, 500);
-							} else {
-								// Fallback: redirect anyway after timeout
-								window.location.href = dashboardUrl;
-							}
-						})
-						.catch(() => {
-							if (attempts < maxAttempts) {
-								attempts++;
-								setTimeout(pollAndRedirect, 500);
-							} else {
-								window.location.href = dashboardUrl;
-							}
-						});
+				showNotification("Dashboard opened in a new tab.", "success");
+				const url = data.url || "/app/";
+				const win = window.open(url, "_blank");
+				if (!win) {
+					// Popup blocker intervened → fall back to the same tab.
+					window.location.href = url;
 				}
-				// Show a notification that we're waiting
-				showNotification("Starting dashboard…", "info");
-				pollAndRedirect();
 			} else {
 				showNotification(data.error || "Failed to start dashboard.", "error");
 			}
 		})
 		.catch(err => {
 			console.error("Dashboard start failed:", err);
-			showNotification("Could not reach the server. Make sure server.py is running on localhost:8000.", "error");
+			showNotification("Could not reach the server. Make sure server.py is running.", "error");
 		});
 }
 
@@ -1159,30 +1289,40 @@ if (saveSettingsBtn) {
  themeMode: customThemeChecked
  ? "custom"
  : (presetThemeChecked ? "preset" : null),    countdownDate: document.getElementById("countdown-date").value,
-    stockCryptoSelection: stockCryptoSelection,
+    stockCryptoSelections: stockCryptoSelections.slice(0, SETTINGS_MAX_STOCKS),
     widgetLayout: {
       cells: layoutState.cells,
     }
   };
 
+ // Save per-browser: every change lands in THIS browser's localStorage
+ // only. No visitor can ever affect another browser's dashboard.
+ try { localStorage.setItem(SETTINGS_STORE_KEY, JSON.stringify(settings)); } catch (e) {
+ showNotification("Browser storage is not available. Settings were not saved.", "error");
+ return;
+ }
+
+ // On the owner machine the Tk desktop dashboard still reads the local
+ // settings file, so an additional copy is posted when this is localhost.
+ const host = window.location.hostname;
+ if (!host || host === "localhost" || host === "127.0.0.1" || host === "[::1]") {
  try {
  const res = await fetch(`${API_BASE}/save`, {
  method: "POST",
  headers: { "Content-Type": "application/json" },
  body: JSON.stringify(settings)
  });
-
  if (!res.ok) {
  const errorData = await res.json().catch(() => null);
- showNotification(errorData?.error ?? "Settings could not be saved.", "error");
- return;
+ showNotification((errorData?.error ?? "Server copy could not be saved — your browser settings are still active."), "error");
  }
-
- showNotification("Settings saved successfully.", "success");
  } catch (error) {
  console.error("Server not reachable:", error);
- showNotification("Server not reachable. Settings were not saved.", "error");
+ showNotification("Server not reachable — your browser settings are still active.", "error");
  }
+ }
+
+ showNotification("Settings saved for this browser.", "success");
  });
 }
 
@@ -1344,15 +1484,27 @@ if (closeStockCryptoWindow && stockCryptoWindow) {
  });
 }
 
-function renderStockCryptoSelection() {
+function renderStockCryptoSelections() {
  if (!stockCryptoSelectedBox || !stockCryptoSelectedLabel) return;
- if (stockCryptoSelection) {
- const typeLabel = stockCryptoSelection.type === "crypto" ? "Crypto" : "Stock";
- stockCryptoSelectedLabel.textContent = `${stockCryptoSelection.name} (${stockCryptoSelection.symbol}) — ${typeLabel}`;
- stockCryptoSelectedBox.style.display = "block";
- } else {
- stockCryptoSelectedBox.style.display = "none";
- }
+ const box = stockCryptoSelectedLabel;
+ box.innerHTML = "";
+ stockCryptoSelections.forEach(function (sel, idx) {
+ const chip = document.createElement("span");
+ chip.className = "stock-chip";
+ chip.textContent = `${sel.symbol} (${sel.type === "crypto" ? "Crypto" : "Stock"})`;
+ const remove = document.createElement("button");
+ remove.type = "button";
+ remove.className = "stock-chip-remove";
+ remove.setAttribute("aria-label", `Remove ${sel.symbol}`);
+ remove.textContent = "\u00d7";
+ remove.addEventListener("click", function () {
+ stockCryptoSelections.splice(idx, 1);
+ renderStockCryptoSelections();
+ });
+ chip.appendChild(remove);
+ box.appendChild(chip);
+ });
+ stockCryptoSelectedBox.style.display = stockCryptoSelections.length ? "block" : "none";
 }
 
 let stockCryptoDebounceTimer;
@@ -1382,14 +1534,24 @@ if (stockCryptoSearchInput && stockCryptoSuggestions) {
             typeSpan.textContent = typeLabel;
             li.appendChild(typeSpan);
 
+            const already = stockCryptoSelections.some(function (sel) {
+              return sel.symbol === result.symbol && sel.type === result.type;
+            });
+            if (already || stockCryptoSelections.length >= SETTINGS_MAX_STOCKS) {
+              li.className = "suggestion-empty";
+              li.textContent = already
+                ? `${result.symbol} is already on the list.`
+                : `Maximum of ${SETTINGS_MAX_STOCKS} symbols reached. Remove one first.`;
+              return;
+            }
             li.addEventListener("click", function () {
-              stockCryptoSelection = {
+              stockCryptoSelections.push({
                 type: result.type,
                 symbol: result.symbol,
                 name: result.name,
                 id: result.id,
-              };
-              renderStockCryptoSelection();
+              });
+              renderStockCryptoSelections();
               stockCryptoSearchInput.value = "";
               stockCryptoSuggestions.innerHTML = "";
             });
@@ -1410,6 +1572,8 @@ if (stockCryptoSearchInput && stockCryptoSuggestions) {
 }
 
 if (saveStockCryptoBtn && stockCryptoWindow) {
+ // Closes the picker — the list becomes part of the settings payload and
+ // is saved together with the main Save button.
  saveStockCryptoBtn.addEventListener("click", function () {
  stockCryptoWindow.style.display = "none";
  updateModalOverlay();

@@ -44,12 +44,14 @@
 <button class="btn" id="close-notifications-window">Save</button>
 </div>
 <div id="stock-crypto-window">
-<p>Choose a stock or a cryptocurrency to display:</p>
+<p>Add stocks or cryptocurrencies to the Stocks widget (up to 6):</p>
 <input type="text" id="stock-crypto-search" placeholder="e.g. Apple or Bitcoin" autocomplete="off">
 <ul id="stock-crypto-suggestions"></ul>
-<p id="stock-crypto-selected" style="display:none;">Selected: <strong id="stock-crypto-selected-label"></strong></p>
-<br>
-<button class="btn" id="save-stock-crypto">Save</button>
+<div id="stock-crypto-selected" style="display:none;">
+<p>Your list — click × to remove:</p>
+<div id="stock-crypto-selected-label"></div>
+</div>
+<button class="btn" id="save-stock-crypto">Done</button>
 </div>
 <div id="site-notification" class="site-notification">
 <span class="site-notification__text"></span>
@@ -110,7 +112,7 @@ You can enable as many widgets as you want — arrange them below in "Align Widg
 </li>
 <li>
 <input type="checkbox" id="stock-crypto-widget" name="stock-crypto-widget" class="limited-checkbox">
-<label for="stock-crypto-widget">Stock/Crypto Prices</label>
+<label for="stock-crypto-widget">Stocks &amp; Crypto</label>
 <button type="button" id="open-stock-crypto-btn" class="btn btn-small">Change</button>
 </li>
 </ul>

@@ -1,16 +1,21 @@
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import os
+import re
+import signal
+import socket
 import subprocess
 import sys
+import threading
 import time
 import requests
 from dotenv import load_dotenv
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
@@ -110,6 +115,111 @@ _CMC_MAP_CACHE_SECONDS = 60 * 60
 _dashboard_proc = None
 _streamlit_proc = None
 
+# The Streamlit web app runs on the loopback interface only and is NOT exposed
+# to the network. The browser reaches it exclusively through this server's own
+# port: every path under /app/... is reverse-proxied to the local Streamlit
+# process (including its WebSocket), so a single port/domain serves everything.
+STREAMLIT_PORT = 8501
+STREAMLIT_UPSTREAM = f"http://127.0.0.1:{STREAMLIT_PORT}"
+STREAMLIT_BASE_PATH = "/app"
+DASHBOARD_URL_PATH = "/app/"
+
+
+def _streamlit_healthy(timeout=2.0):
+    """True when the (baseUrlPath-aware) Streamlit health endpoint answers."""
+    try:
+        r = requests.get(
+            f"{STREAMLIT_UPSTREAM}{STREAMLIT_BASE_PATH}/_stcore/health",
+            timeout=timeout,
+        )
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _port_in_use(port, timeout=0.5):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(timeout)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _kill_stale_streamlit_listeners():
+    """Kill unknown processes listening on the Streamlit port.
+
+    Streamlit is started detached, so an instance from a previous server.py run
+    (or an old version serving without the /app base path) can still occupy the
+    port. Without this, a freshly spawned Streamlit would crash-loop on the
+    busy port while the stale one keeps answering on the wrong paths.
+    """
+    pids = set()
+    try:
+        if os.name == "nt":
+            out = subprocess.run(
+                ["netstat", "-ano", "-p", "TCP"],
+                capture_output=True, text=True, timeout=10,
+                # netstat emits OEM-encoded text on Windows (e.g. CP850 on
+                # German systems); strict UTF-8 decoding would crash here.
+                errors="replace",
+            ).stdout
+            for line in out.splitlines():
+                parts = line.split()
+                # Proto  Local            Foreign   State        PID
+                # A listener always has 0.0.0.0:0 as its foreign address —
+                # language-independent (Windows localizes "LISTENING", e.g.
+                # "ABHÖREN" on German systems).
+                if len(parts) >= 5 and parts[1].endswith(f":{STREAMLIT_PORT}") \
+                        and parts[2] in ("0.0.0.0:0", "[::]:0"):
+                    pids.add(parts[4])
+        else:
+            # lsof is not installed on every minimal server; ss (iproute2) is
+            # present on virtually all modern distros — try both.
+            for cmd in (
+                ["lsof", "-t", "-i", f":{STREAMLIT_PORT}"],
+                ["ss", "-ltnp", f"sport = :{STREAMLIT_PORT}"],
+            ):
+                try:
+                    out = subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=10,
+                        errors="replace",
+                    ).stdout or ""
+                except FileNotFoundError:
+                    continue
+                except Exception as e:
+                    print(f"Could not query processes on port {STREAMLIT_PORT}: {e}")
+                    continue
+                if cmd[0] == "lsof":
+                    pids.update(line.strip() for line in out.splitlines() if line.strip())
+                else:
+                    # ss:  LISTEN 0 128 *:8501  *:*  users:(("streamlit",pid=1234,fd=18))
+                    pids.update(re.findall(r"pid=(\d+)", out))
+                if pids:
+                    break
+    except Exception as e:
+        print(f"Could not look up processes on port {STREAMLIT_PORT}: {e}")
+        return False
+
+    killed = False
+    for pid_str in pids:
+        try:
+            pid = int(pid_str)
+        except ValueError:
+            continue
+        if pid == os.getpid():
+            continue
+        try:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid)],
+                    capture_output=True, timeout=10,
+                )
+            else:
+                os.kill(pid, signal.SIGKILL)
+            killed = True
+            print(f"Killed stale process {pid} on port {STREAMLIT_PORT}")
+        except Exception as e:
+            print(f"Could not kill stale process {pid}: {e}")
+    return killed
+
 
 def _launch_streamlit():
     global _streamlit_proc
@@ -118,12 +228,8 @@ def _launch_streamlit():
     # server.py run — it is detached and survives the parent) already has the
     # port. Spawning another one would crash-loop on the busy port while the
     # still-working old instance keeps answering, so probe first.
-    try:
-        r = requests.get("http://localhost:8501/_stcore/health", timeout=2)
-        if r.status_code == 200:
-            return True, "Streamlit dashboard already running"
-    except Exception:
-        pass
+    if _streamlit_healthy():
+        return True, "Streamlit dashboard already running"
 
     # Replace any running instance so the dashboard always runs the latest code
     if _streamlit_proc is not None and _streamlit_proc.poll() is None:
@@ -136,6 +242,17 @@ def _launch_streamlit():
             except Exception:
                 pass
         _streamlit_proc = None
+
+    if _port_in_use(STREAMLIT_PORT):
+        # Something else holds the port (leftover detached Streamlit from an
+        # older version, without the /app base path). Remove it, then retry.
+        _kill_stale_streamlit_listeners()
+        if _port_in_use(STREAMLIT_PORT):
+            return False, (
+                f"Port {STREAMLIT_PORT} is used by another process that could "
+                "not be stopped. Close it and try again."
+            )
+        time.sleep(0.5)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     streamlit_script = os.path.join(script_dir, "dashboard.py")
@@ -150,16 +267,56 @@ def _launch_streamlit():
         # because that can trigger an elevation prompt on Windows.
         kwargs = {"start_new_session": True}
 
+        # Bound to 127.0.0.1 only: the app is reachable exclusively through
+        # this server's reverse proxy (/app/...), never directly from outside.
+        # baseUrlPath makes Streamlit serve everything under /app so the proxy
+        # can forward paths verbatim. fileWatcherType=none speeds up boot; the
+        # dashboard picks up settings changes on every rerun anyway.
         _streamlit_proc = subprocess.Popen(
             [sys.executable, "-m", "streamlit", "run", streamlit_script,
-             "--server.port=8501", "--server.headless=true",
-             "--server.enableCORS=false"],
+             f"--server.address=127.0.0.1",
+             f"--server.port={STREAMLIT_PORT}",
+             f"--server.baseUrlPath={STREAMLIT_BASE_PATH.lstrip('/')}",
+             "--server.headless=true",
+             "--server.fileWatcherType=none",
+             "--server.enableCORS=false",
+             "--server.enableXsrfProtection=false",
+             "--browser.gatherUsageStats=false"],
             cwd=script_dir,
             **kwargs,
         )
         return True, f"Streamlit dashboard started (PID {_streamlit_proc.pid})"
     except Exception as exc:
         return False, str(exc)
+
+
+def _wait_for_streamlit(timeout=30.0):
+    """Block until the Streamlit health endpoint answers (or timeout)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _streamlit_healthy(timeout=1.0):
+            return True
+        time.sleep(0.25)
+    return False
+
+
+def _ensure_streamlit_ready(wait=30.0):
+    """Make sure Streamlit is up AND ready to serve, waiting if needed.
+
+    Called by /webapp so the browser only gets "ok" once the dashboard can
+    actually render — the client then just opens /app/ with no polling.
+    """
+    if _streamlit_healthy():
+        return True, "Streamlit dashboard already running"
+    ok, msg = _launch_streamlit()
+    if not ok:
+        return False, msg
+    if _wait_for_streamlit(wait):
+        return True, msg
+    return False, (
+        f"{msg}, but it did not become ready within {int(wait)}s. "
+        "Check the server console for Streamlit errors."
+    )
 
 
 def _get_cmc_map():
@@ -433,6 +590,58 @@ def _fetch_stock_price(symbol):
     return {"error": "Could not fetch a quote for this symbol. Try again later."}
 
 
+# Chart ranges for /finance/history: Yahoo range/interval for stocks (keyless
+# chart API) and CoinGecko day counts for crypto (market_chart).
+_FINANCE_HISTORY_RANGES = {
+    "1D": {"yahoo": ("1d", "5m"), "days": 1},
+    "1W": {"yahoo": ("5d", "15m"), "days": 7},
+    "1M": {"yahoo": ("1mo", "60m"), "days": 30},
+    "3M": {"yahoo": ("3mo", "1d"), "days": 90},
+}
+
+
+def _fetch_stock_history(symbol, yahoo_range, yahoo_interval):
+    """Historical closes for a stock via the keyless Yahoo chart endpoint.
+
+    Returns ``[[ms_timestamp, close], ...]`` usable by the widget's chart,
+    skipping null closes (Yahoo pads the series with nulls for halted days).
+    """
+    response = requests.get(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+        params={"range": yahoo_range, "interval": yahoo_interval},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    result = (response.json().get("chart", {}).get("result") or [None])[0]
+    if not result:
+        return []
+    timestamps = result.get("timestamp") or []
+    closes = (result.get("indicators", {}).get("quote", [{}])[0] or {}).get("close") or []
+    points = []
+    for ts, close in zip(timestamps, closes):
+        if close is None:
+            continue
+        points.append([ts * 1000, close])
+    return points
+
+
+def _fetch_crypto_history(coin_id, days):
+    """Historical closes for a crypto via CoinGecko's market_chart endpoint."""
+    response = requests.get(
+        f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart",
+        params={"vs_currency": "usd", "days": str(int(days))},
+        timeout=15,
+    )
+    response.raise_for_status()
+    # prices already come as [[ms, close], ...]
+    return [
+        [p[0], p[1]]
+        for p in (response.json().get("prices") or [])
+        if len(p) >= 2 and p[1] is not None
+    ]
+
+
 def _build_google_flow(code_verifier=None, redirect_uri=None):
     if not _google_client_config:
         raise RuntimeError(f"Google credentials file '{GOOGLE_CREDENTIALS_FILE}' not found or invalid.")
@@ -470,8 +679,16 @@ def _request_redirect_uri(handler):
         return GOOGLE_REDIRECT_URI
 
     # The built-in server speaks plain HTTP on the loopback interface.
-    if host.startswith(("localhost", "127.0.0.1")):
-        return f"http://{host}/auth/google/callback"
+    # Loopback variants (localhost / 127.0.0.1 / [::1]) all normalize to
+    # `localhost`: Google only accepts exact redirect URIs, and this client
+    # registers the localhost form — deriving e.g. http://127.0.0.1:8000/...
+    # would make Google reject the login with `redirect_uri_mismatch`.
+    hostname = (
+        host[: host.find("]") + 1] if host.startswith("[") else host.split(":", 1)[0]
+    )
+    if hostname in ("localhost", "127.0.0.1", "[::1]", "::1"):
+        loopback_host = host if hostname == "localhost" else host.replace(hostname, "localhost", 1)
+        return f"http://{loopback_host}/auth/google/callback"
 
     # Otherwise derive from the forwarded protocol so the same server also
     # works behind a public HTTPS reverse proxy.
@@ -556,54 +773,110 @@ def _save_settings(data):
     os.replace(tmp, SETTINGS_FILE)
 
 
-def _store_google_tokens(credentials):
-    settings = _load_settings()
-    settings["googleCalendar"] = {
-        "connected": True,
-        "token": credentials.token,
-        "refreshToken": credentials.refresh_token,
-        "tokenUri": credentials.token_uri,
-        "clientId": credentials.client_id,
-        "clientSecret": credentials.client_secret,
-        "scopes": credentials.scopes,
-        "expiry": credentials.expiry.isoformat() if credentials.expiry else None,
-    }
-    _save_settings(settings)
-
-
-def _load_google_credentials():
-    settings = _load_settings()
-    token_data = settings.get("googleCalendar")
-    if not token_data or not token_data.get("refreshToken"):
+def _token_expiry_ms(credentials):
+    """Credential expiry as epoch milliseconds (google-auth returns naive UTC)."""
+    if not credentials.expiry:
         return None
-    credentials = Credentials(
-        token=token_data.get("token"),
-        refresh_token=token_data.get("refreshToken"),
-        token_uri=token_data.get("tokenUri") or "https://oauth2.googleapis.com/token",
-        client_id=token_data.get("clientId") or GOOGLE_CLIENT_ID,
-        client_secret=token_data.get("clientSecret") or GOOGLE_CLIENT_SECRET,
-        scopes=token_data.get("scopes") or GOOGLE_SCOPES,
-        expiry=datetime.fromisoformat(token_data["expiry"])
-        if token_data.get("expiry")
-        else None,
-    )
-    if not credentials.valid:
-        try:
-            credentials.refresh(GoogleAuthRequest())
-            _store_google_tokens(credentials)
-        except Exception as e:
-            print(f"Google token refresh failed: {e}")
-            # The refresh token is invalid or revoked — clear the stale
-            # credentials so the UI shows the "connect" button instead of
-            # repeatedly crashing on a bad token.
-            _disconnect_google()
-            return None
-    return credentials
+    exp = credentials.expiry
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    return int(exp.timestamp() * 1000)
 
-def _disconnect_google():
-    settings = _load_settings()
-    settings.pop("googleCalendar", None)
-    _save_settings(settings)
+
+def _credentials_from_bearer(access_token):
+    """Per-request Google credentials taken from the calling browser.
+
+    The server NEVER stores Google logins. Every data request must carry its
+    own access token (Authorization: Bearer ...), so a visitor can only ever
+    read the account that was connected in their own browser.
+    """
+    return Credentials(token=access_token, scopes=GOOGLE_SCOPES)
+
+
+def _is_google_auth_error(exc):
+    """True when Google rejected the request as unauthenticated/unauthorized."""
+    # google-auth raises RefreshError when a request comes back 401 and the
+    # server-side credentials carry no refresh token — which is ALWAYS the
+    # case here, because the refresh token deliberately lives in the calling
+    # browser. Surface it as 401 so that browser refreshes its own token
+    # (via /auth/refresh) and retries.
+    if isinstance(exc, RefreshError):
+        return True
+    resp = getattr(exc, "resp", None)
+    status = getattr(resp, "status", None)
+    if status == 401:
+        return True
+    text = str(exc).lower()
+    return "401" in text or "invalid credentials" in text or "unauthorized" in text
+
+
+def _send_google_token_page(handler, credentials):
+    """Hand the freshly exchanged OAuth tokens to the connecting browser.
+
+    The browser stores them in its own localStorage — the server keeps NO
+    copy — and is then redirected back to the settings page. The OAuth
+    callback runs in the same tab that started the connect, so the tokens
+    land in exactly the browser that initiated the login.
+    """
+    if not credentials.refresh_token:
+        # The browser-side code (script.js getGoogleTokens) only accepts a
+        # login that carries a refresh token — without one the access token
+        # dies within the hour and cannot be renewed, so the login would
+        # report "not connected" right after connecting. Google skips the
+        # refresh token only when offline access was granted earlier WITHOUT
+        # re-consent; the connect request always sends prompt=consent, so
+        # this is a safety net that fails loudly instead of silently.
+        handler._redirect_to_settings(
+            "google_error=" + quote(
+                "Google did not issue a refresh token. Disconnect and connect "
+                "again; if this keeps happening, remove this app's access in "
+                "your Google account settings and connect again."
+            )
+        )
+        return
+    payload = {
+        "access_token": credentials.token,
+        "refresh_token": credentials.refresh_token,
+        "expiryMs": _token_expiry_ms(credentials),
+        "scopes": list(credentials.scopes or []),
+    }
+    # Embed as JSON; escape "</" so a crafted value can never close the tag.
+    token_json = json.dumps(payload).replace("</", "<\\/")
+    page = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<title>Google connected</title>
+</head>
+<body>
+<p>Google account connected. Storing the login in this browser&hellip;</p>
+<noscript>JavaScript is required to store the login in this browser.</noscript>
+<script>
+try {{
+  // IMPORTANT: the tokens must be stored as a JSON STRING. Passing the
+  // object itself to localStorage.setItem would store "[object Object]" —
+  // garbage that JSON.parse rejects, making every page report
+  // "Google is not connected in this browser" right after a login.
+  var tokens = {token_json};
+  localStorage.setItem("dashboardGoogleTokens", JSON.stringify(tokens));
+  location.replace("/settings.html?google_connected=1");
+}} catch (e) {{
+  document.body.textContent = "Could not store the login in this browser: " + e;
+  location.replace("/settings.html?google_error=" +
+      encodeURIComponent("Could not store the login in this browser: " + e));
+}}
+</script>
+</body>
+</html>"""
+    body = page.encode("utf-8")
+    handler.send_response(200)
+    handler.send_header("Content-Type", "text/html; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("Referrer-Policy", "no-referrer")
+    handler.end_headers()
+    handler.wfile.write(body)
 
 
 SENSITIVE_PATH_PARTS = (".env", "client_secret", "settings.json", "__pycache__")
@@ -719,6 +992,82 @@ CORS_ALLOWED_ORIGINS = (
     "http://localhost:8501", "http://127.0.0.1:8501",
 )
 
+# Headers that must not be copied 1:1 when reverse-proxying to Streamlit:
+# hop-by-hop headers plus the ones this side re-computes (Host, lengths,
+# encoding — upstream is always asked for identity encoding so bodies can be
+# inspected/injected without decompressing).
+_HOP_BY_HOP_HEADERS = {
+    "host", "connection", "keep-alive", "proxy-authenticate",
+    "proxy-authorization", "te", "trailer", "trailers", "transfer-encoding",
+    "upgrade", "content-length", "content-encoding", "accept-encoding",
+}
+
+_RESPONSE_HEADERS_TO_SKIP = {
+    "connection", "keep-alive", "transfer-encoding", "content-encoding",
+    "content-length", "server", "date",
+}
+
+# Browsers cannot force real fullscreen from a parent page, so the dashboard
+# page itself asks for fullscreen on the first user interaction (click or key).
+# A no-op catch: without a gesture the request is simply denied.
+_FULLSCREEN_SNIPPET = (
+    "<script>(function(){var done=false;var go=function(){"
+    "if(done)return;done=true;"
+    "var el=document.documentElement;"
+    "if(el.requestFullscreen){el.requestFullscreen().catch(function(){});}};"
+    "document.addEventListener('click',go,{once:true});"
+    "document.addEventListener('keydown',go,{once:true});})();</script>"
+)
+
+_STARTING_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="1">
+<title>Dashboard</title>
+<style>
+  html,body{{margin:0;height:100%;font-family:'Segoe UI',system-ui,sans-serif;
+    background:#0d0d1a;color:#e0e0ff;display:flex;align-items:center;justify-content:center;}}
+  .box{{text-align:center;}}
+  .spin{{width:42px;height:42px;margin:0 auto 18px;border-radius:50%;
+    border:3px solid #2a2a50;border-top-color:#00d4ff;animation:s 0.9s linear infinite;}}
+  @keyframes s{{to{{transform:rotate(360deg);}}}}
+  p{{margin:4px 0;letter-spacing:1px;}}
+  .hint{{color:#6666aa;font-size:13px;}}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="spin"></div>
+  <p>Dashboard is starting&hellip;</p>
+  <p class="hint">This page continues automatically once the dashboard is ready.</p>
+</div>
+{fullscreen}
+</body>
+</html>"""
+
+
+def _inject_fullscreen_script(html: bytes) -> bytes:
+    """Insert the fullscreen-on-first-interaction snippet into an HTML page."""
+    text = html.decode("utf-8", errors="replace")
+    snippet = _FULLSCREEN_SNIPPET
+    if "</body>" in text:
+        text = text.replace("</body>", snippet + "</body>", 1)
+    else:
+        text += snippet
+    return text.encode("utf-8")
+
+
+_upstream_session_instance = None
+
+
+def _upstream_session():
+    """Shared requests.Session so proxy requests reuse pooled connections."""
+    global _upstream_session_instance
+    if _upstream_session_instance is None:
+        _upstream_session_instance = requests.Session()
+    return _upstream_session_instance
+
 
 class Handler(SimpleHTTPRequestHandler):
     # Declare UTF-8 explicitly: without a charset in Content-Type some HTTP
@@ -757,11 +1106,218 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_cors_headers()
         self.end_headers()
 
+    # --- Reverse proxy to the local Streamlit app (/app/...) ----------------
+
+    def _is_streamlit_path(self, path):
+        return path == STREAMLIT_BASE_PATH or path.startswith(STREAMLIT_BASE_PATH + "/")
+
+    def _handle_streamlit(self):
+        if (self.headers.get("Upgrade") or "").strip().lower() == "websocket":
+            self._proxy_streamlit_websocket()
+        else:
+            self._proxy_streamlit_http()
+
+    def _serve_starting_page(self):
+        """Shown when Streamlit is still booting (e.g. /app/ opened directly).
+
+        Auto-refreshes every second, so it continues into the dashboard on its
+        own — no clicking required.
+        """
+        body = _STARTING_PAGE.format(fullscreen=_FULLSCREEN_SNIPPET).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _proxy_streamlit_http(self):
+        parsed = urlparse(self.path)
+        is_doc = self.command in ("GET", "HEAD") and parsed.path in (
+            STREAMLIT_BASE_PATH, STREAMLIT_BASE_PATH + "/",
+        )
+
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length) if length else None
+        fwd = {
+            k: v for k, v in self.headers.items()
+            if k.lower() not in _HOP_BY_HOP_HEADERS
+        }
+        # Identity encoding: lets us inject into the HTML document without
+        # having to decompress anything.
+        fwd["Accept-Encoding"] = "identity"
+
+        try:
+            resp = _upstream_session().request(
+                self.command, STREAMLIT_UPSTREAM + self.path,
+                headers=fwd, data=body, stream=True,
+                allow_redirects=False, timeout=(3, 120),
+            )
+        except requests.exceptions.RequestException:
+            if is_doc:
+                self._serve_starting_page()
+            else:
+                _write_json_response(self, 502, {
+                    "error": "Dashboard backend is not ready yet. Try again."
+                })
+            return
+
+        try:
+            self.send_response(resp.status_code)
+            for k, v in resp.headers.items():
+                low = k.lower()
+                if low == "location":
+                    # Never leak the internal upstream address (e.g. the 307
+                    # /app -> /app/ redirect): point the client back at this
+                    # server with a relative URL instead.
+                    self.send_header(k, v.replace(STREAMLIT_UPSTREAM, ""))
+                    continue
+                if low not in _RESPONSE_HEADERS_TO_SKIP:
+                    self.send_header(k, v)
+            self.close_connection = True
+            self.send_header("Connection", "close")
+
+            payload = None
+            content_type = resp.headers.get("Content-Type") or ""
+            if (
+                is_doc and self.command == "GET"
+                and "text/html" in content_type
+            ):
+                # The app shell is the one page the user sees — give it the
+                # fullscreen-on-first-interaction behavior.
+                payload = _inject_fullscreen_script(resp.content)
+                self.send_header("Content-Length", str(len(payload)))
+            else:
+                upstream_len = resp.headers.get("Content-Length")
+                if upstream_len:
+                    self.send_header("Content-Length", upstream_len)
+            self.end_headers()
+
+            if self.command == "HEAD":
+                return
+            if payload is not None:
+                self.wfile.write(payload)
+            else:
+                try:
+                    for chunk in resp.iter_content(65536):
+                        if chunk:
+                            self.wfile.write(chunk)
+                except (requests.exceptions.RequestException, ConnectionError):
+                    # Upstream died mid-transfer; the client sees the truncated
+                    # (close-delimited) response. Nothing more we can do here.
+                    pass
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # client went away (e.g. navigated/refreshed)
+        finally:
+            resp.close()
+
+    def _proxy_streamlit_websocket(self):
+        """Tunnel the Streamlit WebSocket through this server.
+
+        Reads the handshake, replays it verbatim to the local Streamlit (paths
+        match 1:1 thanks to baseUrlPath), forwards the 101 response and then
+        splices the two sockets together without interpreting frames.
+        """
+        try:
+            backend = socket.create_connection(
+                ("127.0.0.1", STREAMLIT_PORT), timeout=5
+            )
+        except OSError:
+            self.send_response(502)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
+        try:
+            # No timeout for the long-lived tunneled connection (the 5s above
+            # would otherwise drop an idle dashboard session).
+            backend.settimeout(None)
+
+            raw = self.raw_requestline + b"".join(
+                f"{k}: {v}\r\n".encode("latin-1")
+                for k, v in self.headers.items()
+            ) + b"\r\n"
+            backend.sendall(raw)
+
+            buf = b""
+            while b"\r\n\r\n" not in buf and len(buf) < 65536:
+                chunk = backend.recv(4096)
+                if not chunk:
+                    raise ConnectionError(
+                        "backend closed during WebSocket handshake"
+                    )
+                buf += chunk
+
+            head, sep, rest = buf.partition(b"\r\n\r\n")
+            status = head.split(b"\r\n", 1)[0].split()
+            code = int(status[1]) if len(status) >= 2 and status[1].isdigit() else 0
+            self.close_connection = True
+
+            self.wfile.write(head + sep)
+            if code != 101:
+                if rest:
+                    self.wfile.write(rest)
+                return
+
+            self.wfile.flush()
+            if rest:
+                self.connection.sendall(rest)
+
+            def pump(reader, dst):
+                """Copy one direction until EOF, then half-close the target."""
+                try:
+                    while True:
+                        data = reader(65536)
+                        if not data:
+                            break
+                        dst.sendall(data)
+                except OSError:
+                    pass
+                finally:
+                    try:
+                        dst.shutdown(socket.SHUT_WR)
+                    except OSError:
+                        pass
+
+            up = threading.Thread(
+                target=pump,
+                args=(lambda n: self.rfile.read1(n), backend),
+                daemon=True,
+            )
+            down = threading.Thread(
+                target=pump,
+                args=(lambda n: backend.recv(n), self.connection),
+                daemon=True,
+            )
+            up.start()
+            down.start()
+            # This request thread stays alive for the whole WebSocket session —
+            # that is what keeps the tunnel open while the server framework
+            # would otherwise close the socket after do_* returns.
+            up.join()
+            down.join(timeout=10)
+        except OSError:
+            pass
+        finally:
+            try:
+                backend.close()
+            except OSError:
+                pass
+
     def do_POST(self):
+        if self._is_streamlit_path(urlparse(self.path).path):
+            self._handle_streamlit()
+            return
+
         if self.path == "/webapp":
-            ok, msg = _launch_streamlit()
+            # Wait until Streamlit can actually serve before answering, so the
+            # browser can open /app/ immediately — no client-side polling.
+            ok, msg = _ensure_streamlit_ready()
             if ok:
-                _write_json_response(self, 200, {"status": "ok", "message": msg, "url": "http://localhost:8501"})
+                _write_json_response(self, 200, {
+                    "status": "ok", "message": msg, "url": DASHBOARD_URL_PATH,
+                })
             else:
                 _write_json_response(self, 500, {"status": "error", "error": msg})
             return
@@ -787,16 +1343,78 @@ class Handler(SimpleHTTPRequestHandler):
                 _write_json_response(self, 400, {"status": "error", "error": validation_error})
                 return
 
-            existing = _load_settings()
-            if "googleCalendar" in existing:
-                data["googleCalendar"] = existing["googleCalendar"]
-
+            # Google logins live only in each browser's localStorage — never
+            # persist them, no matter what a client sends.
+            data.pop("googleCalendar", None)
             _save_settings(data)
             _write_json_response(self, 200, {"status": "ok"})
+            return
 
-        elif self.path == "/calendar/disconnect":
-            _disconnect_google()
-            _write_json_response(self, 200, {"status": "ok"})
+        if self.path == "/settings/render":
+            # Render the dashboard for a browser-provided settings payload.
+            # Budget-style browsers each keep their settings in their own
+            # localStorage; this endpoint only turns the POSTed payload into
+            # the dashboard HTML — it NEVER writes settings.json. Visitors
+            # therefore see (and change) only their own settings.
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                data = json.loads(self.rfile.read(length) or b"{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                data = {}
+            if not isinstance(data, dict) or not data:
+                data = _load_settings()
+            try:
+                import dashboard
+                _css, html = dashboard.render_dashboard_html(data)
+            except Exception as e:
+                print("Dashboard render failed:", e)
+                _write_json_response(self, 500, {"error": str(e)[:200]})
+                return
+            body = (_css + html).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if self.path == "/auth/refresh":
+            # Exchange a browser-provided refresh token for a fresh access
+            # token. Stateless: nothing is stored, the client keeps the token.
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                data = json.loads(self.rfile.read(length) or b"{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                data = {}
+            refresh_token = (data.get("refresh_token") or "").strip()
+            if not refresh_token:
+                _write_json_response(self, 400, {"error": "Missing refresh_token."})
+                return
+            if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+                _write_json_response(self, 500, {"error": "Google OAuth is not configured on the server."})
+                return
+            credentials = Credentials(
+                token=None,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=GOOGLE_CLIENT_ID,
+                client_secret=GOOGLE_CLIENT_SECRET,
+                scopes=GOOGLE_SCOPES,
+            )
+            try:
+                credentials.refresh(GoogleAuthRequest())
+            except Exception as e:
+                print(f"Google token refresh failed: {e}")
+                # 401 tells the browser this login is dead and must be
+                # re-established (its own localStorage entry only).
+                _write_json_response(self, 401, {"error": "Google login expired. Please connect again."})
+                return
+            _write_json_response(self, 200, {
+                "access_token": credentials.token,
+                "refresh_token": credentials.refresh_token or refresh_token,
+                "expiryMs": _token_expiry_ms(credentials),
+            })
+            return
 
         else:
             _write_json_response(self, 404, {"status": "error", "error": "Unknown endpoint."})
@@ -805,21 +1423,25 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        if path == "/dashboard.html":
-            # Redirect to the Streamlit dashboard webapp
-            # Ensure streamlit is running
-            ok, msg = _launch_streamlit()
-            self.send_response(302)
-            self.send_cors_headers()
-            self.send_header("Location", "http://localhost:8501")
-            self.end_headers()
+        if self._is_streamlit_path(path):
+            self._handle_streamlit()
             return
 
         if path == "/load":
             if os.path.exists(SETTINGS_FILE):
                 with open(SETTINGS_FILE, "r") as f:
-                    content = f.read()
-                body = content.encode()
+                    try:
+                        data = json.load(f)
+                    except (json.JSONDecodeError, ValueError):
+                        data = {}
+                # settings.json stores the Google credentials (incl. the
+                # refresh token). No browser ever needs them — this endpoint
+                # is called by every visitor's settings page, and they used
+                # to receive the full credential set. Serve everything
+                # EXCEPT those secrets; the server keeps using the stored
+                # values, and /save preserves the block via _load_settings().
+                data.pop("googleCalendar", None)
+                body = json.dumps(data).encode()
                 self.send_response(200)
                 self.send_cors_headers()
                 self.send_header("Content-Type", "application/json")
@@ -869,19 +1491,20 @@ class Handler(SimpleHTTPRequestHandler):
                 # flow's own redirect_uri. A second value raises
                 # "got multiple values for keyword argument 'redirect_uri'".
                 flow.fetch_token(code=code)
-                _store_google_tokens(flow.credentials)
             except Exception as e:
                 self._redirect_to_settings(f"google_error={quote(_google_oauth_error_hint(str(e)))}")
                 return
-            self._redirect_to_settings("google_connected=1")
+            # Success: give the tokens to the connecting browser only. Nothing
+            # is written to disk — each browser owns its login from here on.
+            _send_google_token_page(self, flow.credentials)
 
         elif path == "/calendar/events":
-            credentials = _load_google_credentials()
-            if credentials is None:
-                _write_json_response(self, 401, {"error": "Google Calendar is not connected."})
+            access_token = self._bearer_token()
+            if not access_token:
+                _write_json_response(self, 401, {"error": "Google Calendar is not connected in this browser."})
                 return
             try:
-                service = build("calendar", "v3", credentials=credentials)
+                service = build("calendar", "v3", credentials=_credentials_from_bearer(access_token))
                 result = service.events().list(
                     calendarId="primary",
                     timeMin=_now_iso(),
@@ -891,12 +1514,15 @@ class Handler(SimpleHTTPRequestHandler):
                 ).execute()
                 _write_json_response(self, 200, {"events": result.get("items", [])})
             except Exception as e:
-                _write_json_response(self, 500, {"error": str(e)})
+                if _is_google_auth_error(e):
+                    _write_json_response(self, 401, {"error": "Google login expired. Please connect again."})
+                else:
+                    _write_json_response(self, 500, {"error": str(e)})
 
         elif path == "/calendar/status":
-            settings = _load_settings()
-            connected = bool((settings.get("googleCalendar") or {}).get("connected"))
-            _write_json_response(self, 200, {"connected": connected})
+            # Kept for compatibility; connection state lives in each browser,
+            # so the server can only report "not connected".
+            _write_json_response(self, 200, {"connected": False})
 
         elif path == "/finance/search":
             params = parse_qs(parsed.query)
@@ -936,13 +1562,50 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 _write_json_response(self, 400, {"error": "Invalid type. Use 'stock' or 'crypto'."})
 
+        elif path == "/finance/history":
+            # Historical closes for the stocks widget's chart.
+            params = parse_qs(parsed.query)
+            finance_type = (params.get("type", [""])[0] or "").lower()
+            symbol = (params.get("symbol", [""])[0] or "").strip()
+            name = (params.get("name", [""])[0] or "").strip()
+            range_key = (params.get("range", ["1D"])[0] or "1D").upper()
+            if range_key not in _FINANCE_HISTORY_RANGES:
+                range_key = "1D"
+
+            if finance_type == "stock":
+                if not symbol:
+                    _write_json_response(self, 400, {"error": "Missing symbol."})
+                    return
+                yahoo_range, yahoo_interval = _FINANCE_HISTORY_RANGES[range_key]["yahoo"]
+                try:
+                    _write_json_response(self, 200, {
+                        "points": _fetch_stock_history(symbol, yahoo_range, yahoo_interval),
+                        "range": range_key,
+                    })
+                except Exception as e:
+                    _write_json_response(self, 502, {"error": str(e)[:120]})
+            elif finance_type == "crypto":
+                if not symbol and not name:
+                    _write_json_response(self, 400, {"error": "Missing symbol or name."})
+                    return
+                try:
+                    days = _FINANCE_HISTORY_RANGES[range_key]["days"]
+                    _write_json_response(self, 200, {
+                        "points": _fetch_crypto_history(_coingecko_id_for(symbol, name), days),
+                        "range": range_key,
+                    })
+                except Exception as e:
+                    _write_json_response(self, 502, {"error": str(e)[:120]})
+            else:
+                _write_json_response(self, 400, {"error": "Unknown type."})
+
         elif path == "/notifications/messages":
-            credentials = _load_google_credentials()
-            if credentials is None:
-                _write_json_response(self, 401, {"error": "Google Mail is not connected."})
+            access_token = self._bearer_token()
+            if not access_token:
+                _write_json_response(self, 401, {"error": "Google Mail is not connected in this browser."})
                 return
             try:
-                service = build("gmail", "v1", credentials=credentials)
+                service = build("gmail", "v1", credentials=_credentials_from_bearer(access_token))
                 listing = service.users().messages().list(
                     userId="me",
                     labelIds=["INBOX"],
@@ -970,7 +1633,11 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 error_text = str(e)
                 lowered = error_text.lower()
-                if (
+                if _is_google_auth_error(e):
+                    _write_json_response(self, 401, {
+                        "error": "Google login expired. Please connect again."
+                    })
+                elif (
                     "precondition check failed" in lowered
                     or "failedprecondition" in lowered
                 ):
@@ -1005,12 +1672,22 @@ class Handler(SimpleHTTPRequestHandler):
     def do_HEAD(self):
         # Same protection as do_GET: HEAD must not leak file metadata for secrets.
         parsed = urlparse(self.path)
+        if self._is_streamlit_path(parsed.path):
+            self._handle_streamlit()
+            return
         if _is_sensitive_path(parsed.path):
             self.send_response(403)
             self.send_cors_headers()
             self.end_headers()
             return
         super().do_HEAD()
+
+    def _bearer_token(self):
+        """Access token the calling browser sent with this request (or None)."""
+        auth = (self.headers.get("Authorization") or "").strip()
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip() or None
+        return None
 
     def _redirect_to_settings(self, query):
         self.send_response(302)
@@ -1024,8 +1701,30 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+# HOST=0.0.0.0 makes the site reachable from outside (required when hosting on
+# a server behind a domain); set HOST=127.0.0.1 to restrict it to this machine.
+# PORT can be changed without touching the code (then also update the Google
+# OAuth redirect URI). The Streamlit subprocess inherits PORT so its server
+# callbacks (weather, prices, calendar) hit this server on the right port.
+HOST = os.environ.get("HOST", "0.0.0.0")
+PORT = int(os.environ.get("PORT", "8000"))
+os.environ["PORT"] = str(PORT)
+
 # Threading server: each request runs in its own thread, so one slow/stuck
 # connection can never freeze the whole site.
-httpd = ThreadingHTTPServer(("localhost", 8000), Handler)
-print("Server runs on http://localhost:8000")
-httpd.serve_forever()
+if __name__ == "__main__":
+    # Pre-warm the Streamlit app right at startup so "Start Dashboard" later
+    # opens instantly instead of waiting for a cold boot on first click.
+    ok, msg = _launch_streamlit()
+    print(f"[streamlit] {msg}")
+
+    httpd = ThreadingHTTPServer((HOST, PORT), Handler)
+    display_host = "localhost" if HOST in ("0.0.0.0", "", "::") else HOST
+    print(f"Website + API : http://{display_host}:{PORT}")
+    print(f"Web dashboard : http://{display_host}:{PORT}{DASHBOARD_URL_PATH}"
+          f"  ('Start Dashboard' opens this in a new tab; everything runs on"
+          f" this single port — Streamlit itself stays on 127.0.0.1 only)")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nServer stopped.")

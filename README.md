@@ -39,7 +39,12 @@ dashboard/
    - Press Settings in the menu
    - Edit the settings as you want
    - Save your settings
-5. **Press Open Dashboard -> Start Dashboard** to start your dashboard
+5. **Press Open Dashboard -> Start Dashboard** to start your dashboard — it opens in a new browser tab in fullscreen, on the same port (no extra ports, works on any domain)
+
+The Streamlit web dashboard always runs under `/app/` on the same port as `server.py`
+(e.g. `http://localhost:8000/app/`). Streamlit itself stays bound to `127.0.0.1` only
+and is reverse-proxied by `server.py`, so one single port serves everything — including
+on a real server behind a domain.
 
 ---
 
@@ -53,6 +58,8 @@ POST | /save | Save settings in settings.json
 GET | /load | Returns the current settings.json
 GET | /auth/google | Returns the Google OAuth login URL
 GET | /auth/google/callback | Google redirects here after login; stores tokens in settings.json
+POST | /webapp | Starts the Streamlit web dashboard (if not already running) and waits until it is ready; the frontend then opens /app/
+GET | /app/... | Reverse-proxied Streamlit web dashboard (same port, incl. its WebSocket)
 GET | /launch | Launch the dashboard.py application
 GET | /calendar/status | Returns whether Google Calendar is connected
 GET | /calendar/events | Returns the next 10 upcoming events from the connected calendar
@@ -103,7 +110,19 @@ To use the Calendar widget with your real Google Calendar:
    Alternatively, you can drop a downloaded `client_secret.json` (from Google Cloud Console) into the project folder — the server picks it up automatically.
 5. Start the server, open **Settings**, press **Connect Google Calendar** (or **Connect Google Mail** — both connect the same Google account and cover Calendar + Gmail).
 
-The access and refresh tokens are stored locally in `settings.json` under the `googleCalendar` key, so both the website and the Python dashboard (`dashboard.py`) use the same connection. Nothing is sent anywhere except directly to Google's own servers.
+**Per-browser login (privacy by design):** the Google access/refresh tokens are stored
+ONLY in the localStorage of the browser that ran the connect — never on the server
+and never in `settings.json`. The server just exchanges the OAuth code and then
+proxies data requests that carry that browser's own token (`Authorization: Bearer`).
+Consequences:
+
+- Every browser connects its own Google account and only ever sees **its own**
+  calendar/mail data — other visitors of the same site cannot see it.
+- Disconnect removes the login from that browser only.
+- The desktop Tk dashboard (`dashboard.py` without a browser) has no browser
+  storage, so its Calendar/Messages widgets point to the web dashboard instead.
+
+Nothing is sent anywhere except directly to Google's own servers.
 
 **Important:** never commit your real `.env` file or share your client secret. If it's ever exposed accidentally, regenerate it in the Google Cloud Console.
 
@@ -118,6 +137,63 @@ Calendar and Gmail share a **single** OAuth client and a single consent screen (
 - **`400 failedPrecondition` / "Precondition check failed" (Messages widget only)** — the connected Google identity has **no Gmail mailbox**. This is common for accounts registered with a non-Google address (e.g. `@freenet.de`, `@t-online.de`): Calendar works for them, but Google refuses every Gmail API call. Connect a real Gmail account (`@gmail.com` or a Workspace mailbox) for the Messages widget, or disable it in Settings.
 
 If you change the port, update the redirect URI accordingly (e.g. `http://localhost:8001/auth/google/callback`) both in Google Cloud Console and in `GOOGLE_REDIRECT_URI`.
+
+---
+
+# Hosting on a server (own domain)
+
+The whole app runs as ONE process on ONE port — `python server.py` serves the
+website, the API and the Streamlit dashboard (reverse-proxied under `/app/`,
+including its WebSocket). Streamlit itself stays bound to `127.0.0.1` and is
+never exposed. On a server, put a TLS-terminating reverse proxy (nginx, Caddy,
+...) in front and forward to server.py's port:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name dashboard.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;                     # OAuth callback derivation
+        proxy_set_header X-Forwarded-Proto $scheme;      # https detection
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;          # WebSocket for /app/
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;                        # keep dashboard sessions open
+    }
+}
+```
+
+Deployment checklist:
+
+1. Copy the project to the server (`.gitignore` keeps secrets out of git) and
+   create the `.env` there with `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` /
+   `GOOGLE_REDIRECT_URI` (e.g. `https://your-domain/auth/google/callback`).
+2. `pip install -r requirements.txt` (tkinter is NOT required on the server —
+   the web dashboard works without it; only the desktop Tk app needs it).
+3. Start it with a process manager so it survives reboots, e.g. systemd:
+   ```
+   [Unit]
+   Description=Dashboard
+   After=network.target
+   [Service]
+   WorkingDirectory=/opt/dashboard
+   Environment=HOST=127.0.0.1
+   Environment=PORT=8000
+   ExecStart=/usr/bin/python3 server.py
+   Restart=always
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   `HOST=127.0.0.1` when the proxy runs on the same machine (recommended —
+   only the proxy port is then reachable from outside); `PORT` is free.
+4. Add your domain as an authorized redirect URI in Google Cloud Console
+   (`https://your-domain/auth/google/callback`) — the server derives the
+   callback from the Host header automatically.
+5. Open `https://your-domain` — everything (site + dashboard under `/app/`)
+   runs on this one port. Google logins are stored per browser (localStorage),
+   never on the server.
 
 ---
 

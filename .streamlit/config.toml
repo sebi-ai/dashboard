@@ -2,6 +2,11 @@
 headless = true
 enableCORS = false
 enableXsrfProtection = false
+# Serve the app under /app so server.py can reverse-proxy it on its own port
+# (Streamlit itself stays bound to 127.0.0.1 and is never exposed directly).
+baseUrlPath = "app"
+# Faster boot; the dashboard reads settings.json on every rerun anyway.
+fileWatcherType = "none"
 
 [theme]
 primaryColor = "#00d4ff"
