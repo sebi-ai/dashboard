@@ -3,6 +3,7 @@ from urllib.parse import urlparse, parse_qs, quote
 from datetime import datetime, timezone
 import json
 import os
+import glob
 import re
 import signal
 import socket
@@ -20,10 +21,28 @@ from googleapiclient.discovery import build
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-GOOGLE_CREDENTIALS_FILE = os.environ.get(
-    "GOOGLE_CREDENTIALS_FILE",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "client_secret.json"),
-)
+import glob
+
+# Google's Cloud Console downloads the OAuth client as
+# `client_secret_<client-id>.json`, so the server auto-discovers any such file
+# instead of requiring an exact `client_secret.json` rename. An explicit
+# GOOGLE_CREDENTIALS_FILE env var always wins.
+def _resolve_google_credentials_file():
+    env_path = os.environ.get("GOOGLE_CREDENTIALS_FILE")
+    if env_path:
+        return env_path
+    base = os.path.dirname(os.path.abspath(__file__))
+    exact = os.path.join(base, "client_secret.json")
+    if os.path.exists(exact):
+        return exact
+    candidates = glob.glob(os.path.join(base, "client_secret*.json"))
+    if candidates:
+        candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        return candidates[0]
+    return exact
+
+
+GOOGLE_CREDENTIALS_FILE = _resolve_google_credentials_file()
 
 
 def _normalize_client_id(client_id):
@@ -274,7 +293,7 @@ def _launch_streamlit():
         # dashboard picks up settings changes on every rerun anyway.
         _streamlit_proc = subprocess.Popen(
             [sys.executable, "-m", "streamlit", "run", streamlit_script,
-             f"--server.address=127.0.0.1",
+             "--server.address=127.0.0.1",
              f"--server.port={STREAMLIT_PORT}",
              f"--server.baseUrlPath={STREAMLIT_BASE_PATH.lstrip('/')}",
              "--server.headless=true",
@@ -1441,6 +1460,11 @@ class Handler(SimpleHTTPRequestHandler):
                 # EXCEPT those secrets; the server keeps using the stored
                 # values, and /save preserves the block via _load_settings().
                 data.pop("googleCalendar", None)
+                # Widgets are per-browser: a fresh visitor must never inherit
+                # the owner's enabled set (which used to tick every checkbox).
+                # Every browser starts with none and chooses its own — the
+                # rest of the seed (location/theme) still applies.
+                data.pop("widgets", None)
                 body = json.dumps(data).encode()
                 self.send_response(200)
                 self.send_cors_headers()
@@ -1697,7 +1721,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def _now_iso():
-    from datetime import datetime, timezone
+    from datetime import timezone
     return datetime.now(timezone.utc).isoformat()
 
 

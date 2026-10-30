@@ -48,7 +48,7 @@
 <input type="text" id="stock-crypto-search" placeholder="e.g. Apple or Bitcoin" autocomplete="off">
 <ul id="stock-crypto-suggestions"></ul>
 <div id="stock-crypto-selected" style="display:none;">
-<p>Your list — click × to remove:</p>
+<p>Your list — click x to remove:</p>
 <div id="stock-crypto-selected-label"></div>
 </div>
 <button class="btn" id="save-stock-crypto">Done</button>
@@ -80,15 +80,15 @@
 <br>
 <br>
 <label for="use-ip-location">Use IP Location</label>
-<input type="checkbox" id="use-ip-location" name="use-ip-location" unchecked>
+<input type="checkbox" id="use-ip-location" name="use-ip-location">
 </div>
 <div id="Widgets" class="settings-section">
 <h2>Widgets</h2>
 <p>By pressing the checkboxes in front of the widgets, you can add them to your dashboard.<br>
-You can enable as many widgets as you want — arrange them below in "Align Widgets".</p>
+You can enable up to 4 widgets at a time - arrange them below in "Align Widgets".</p>
 <ul id="widgets-list">
 <li>
-<input type="checkbox" id="weather-widget" name="weather-widget" class="limited-checkbox" unchecked>
+<input type="checkbox" id="weather-widget" name="weather-widget" class="limited-checkbox">
 <label for="weather-widget">Weather</label>
 </li>
 <li>
@@ -120,10 +120,7 @@ You can enable as many widgets as you want — arrange them below in "Align Widg
 <div id="AlignWidgets" class="settings-section">
 <h2>Align Widgets</h2>
 <p>Arrange your widgets freely: drag a widget by its body to move it anywhere
-and pull a corner handle to resize it to any width or height — no snapping.
-The other widgets move out of the way and automatically fill any empty
-space, and no widget can grow so big that it hides the others. Only widgets
-enabled above are shown.</p>
+and pull a corner handle to resize it to any width or height. Only enabled widgets are shown.</p>
 <div id="layout-map">
 <div id="layout-grid"></div>
 </div>
@@ -154,6 +151,6 @@ enabled above are shown.</p>
 </div>
 </div>
 <button id="save-settings-btn" class="btn">Save Settings</button>
-<script src="script.js"></script>
+<script src="script.js?v=4"></script>
 </body>
 </html>

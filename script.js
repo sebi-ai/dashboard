@@ -79,6 +79,77 @@ function hasGoogleTokens() {
   return getGoogleTokens() !== null;
 }
 
+// ---- site-wide notification toast (defined FIRST: helpers such as
+// showStorageNote run during script init and must not hit its TDZ) ----
+const notification = document.getElementById("site-notification");
+const notificationText = notification ? notification.querySelector(".site-notification__text") : null;
+let notificationTimer = null;
+
+function showNotification(message, type = "info") {
+ if (!notificationText) return;
+ clearTimeout(notificationTimer);
+
+ notificationText.textContent = message;
+
+ notification.className = "site-notification";
+ notification.classList.add("site-notification-visible");
+ notification.classList.add(`site-notification--${type}`);
+
+ notificationTimer = setTimeout(() => {
+ notification.className = "site-notification";
+ }, 3000);
+}
+
+// Widget limit: a dashboard stays readable only with a maximum of 4 widgets.
+const MAX_WIDGETS = 4;
+
+function enforceWidgetLimit() {
+  const boxes = Object.values(WIDGET_KEY_TO_CHECKBOX)
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+  const checked = boxes.filter(b => b.checked).length;
+  boxes.forEach(b => {
+    const over = !b.checked && checked >= MAX_WIDGETS;
+    b.disabled = over;
+    b.title = over ? "Maximum of 4 widgets enabled." : "";
+  });
+  return checked;
+}
+
+// Snapshot the CURRENT checkbox map into this browser's saved settings, so
+// ticks survive every reload — including the reload the Google connect flow
+// performs when it returns to /settings.html. An object that already holds
+// location/theme/layout is preserved; a fresh browser just gets {widgets}.
+function persistWidgetState() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(SETTINGS_STORE_KEY) || "null"); } catch (e) {}
+  if (!s || typeof s !== "object" || Array.isArray(s)) s = { widgetsVersion: 2 };
+  const widgets = {};
+  Object.entries(WIDGET_KEY_TO_CHECKBOX).forEach(([key, id]) => {
+    const box = document.getElementById(id);
+    if (box) widgets[key] = !!box.checked;
+  });
+  s.widgets = widgets;
+  try { localStorage.setItem(SETTINGS_STORE_KEY, JSON.stringify(s)); } catch (e2) {}
+}
+
+// Connecting Google (Calendar/Mail) implies the matching widgets: tick their
+// checkboxes automatically, but never beyond the 4-widget limit. Sets the
+// checkbox directly (no change event) so no pop-up windows open on their own.
+function autoTickGoogleWidget(key) {
+  if (!hasGoogleTokens()) return;
+  const cb = document.getElementById(WIDGET_KEY_TO_CHECKBOX[key]);
+  if (!cb || cb.checked) return;
+  if (enforceWidgetLimit() >= MAX_WIDGETS) {
+    showNotification("Google connected, but you already have 4 widgets. Untick one to add " + WIDGET_KEY_TO_LABEL[key] + ".", "info");
+    return;
+  }
+  cb.checked = true;   // no event → no modal/preview window opens on its own
+  persistWidgetState();  // must survive the reload the connect flow does
+  enforceWidgetLimit();
+  renderLayoutEditor();
+}
+
 let tokenRefreshPromise = null;
 
 async function getAccessToken(force = false) {
@@ -216,9 +287,10 @@ if (disconnectMailBtn) {
 function refreshCalendarStatus() {
  if (!calendarStatus) return;
  if (hasGoogleTokens()) {
- calendarStatus.textContent = "Connected to Google Calendar (login stored in this browser).";
+ calendarStatus.textContent = "Connected to Google Calendar - private to this browser. Other visitors of this site cannot see your data.";
  if (connectBtn) connectBtn.style.display = "none";
  if (disconnectBtn) disconnectBtn.style.display = "inline-block";
+ autoTickGoogleWidget("calendar");
  loadCalendarEvents();
  } else {
  calendarStatus.textContent = "Not connected.";
@@ -262,12 +334,33 @@ async function loadCalendarEvents() {
  }
 }
 
+// Sender addresses never reach any screen raw: "Name <addr>" shows the name
+// only, a bare address is masked (j***@example.com). Same rule as the
+// dashboard widgets, so no public display shows anyone's email address.
+function maskAddrForDisplay(a) {
+  a = String(a || "").trim();
+  const at = a.indexOf("@");
+  return at <= 0 ? a : a.charAt(0) + "***@" + a.slice(at + 1);
+}
+function maskEmailSender(raw) {
+  raw = String(raw || "").trim();
+  if (!raw) return "(unknown sender)";
+  const lt = raw.indexOf("<");
+  if (lt !== -1 && raw.charAt(raw.length - 1) === ">") {
+    const name = raw.slice(0, lt).trim().replace(/^"(.*)"$/, "$1").trim();
+    if (name) return name;
+    return maskAddrForDisplay(raw.slice(lt + 1, raw.length - 1));
+  }
+  return maskAddrForDisplay(raw);
+}
+
 function refreshNotificationsStatus() {
  if (!notificationsStatus) return;
  if (hasGoogleTokens()) {
- notificationsStatus.textContent = "Connected to Google Mail (login stored in this browser).";
+ notificationsStatus.textContent = "Connected to Google Mail - private to this browser. Other visitors of this site cannot see your email or messages.";
  if (connectMailBtn) connectMailBtn.style.display = "none";
  if (disconnectMailBtn) disconnectMailBtn.style.display = "inline-block";
+ autoTickGoogleWidget("notifications");
  loadMessages();
  } else {
  notificationsStatus.textContent = "Not connected.";
@@ -310,7 +403,7 @@ async function loadMessages() {
  subject.textContent = msg.subject || "(no subject)";
  li.appendChild(subject);
  li.appendChild(document.createElement("br"));
- li.appendChild(document.createTextNode(msg.from || "(unknown sender)"));
+ li.appendChild(document.createTextNode(maskEmailSender(msg.from)));
  li.appendChild(document.createElement("br"));
  const snippet = document.createElement("small");
  snippet.textContent = msg.snippet || "";
@@ -370,8 +463,29 @@ async function loadSettings() {
  // GET /load is only a fallback seed for first visits (it strips the Google
  // secrets) — visitors start from the owner's defaults, then keep their own.
  let s = null;
+ let fromOwnBrowser = false;
  try { s = JSON.parse(localStorage.getItem(SETTINGS_STORE_KEY) || "null"); } catch (e) {}
- if (s) { showStorageNote(); }
+ if (s) {
+ fromOwnBrowser = true;
+ // Clean up stale widget state. Two cases:
+ // 1. Saved before widgets became per-browser (widgetsVersion < 2): the
+ //    all-on seed may still be present -> clear.
+ // 2. A state with more than MAX_WIDGETS ticked is impossible to produce
+ //    through the UI (which caps at 4), so it must be the stale all-on
+ //    seed that slipped through an earlier version -> clear it too.
+ //    This never touches a legitimate selection (<= 4 widgets).
+ let stale = (s.widgetsVersion || 0) < 2;
+ if (!stale && s.widgets && typeof s.widgets === "object") {
+   const n = Object.values(s.widgets).filter(Boolean).length;
+   if (n > MAX_WIDGETS) stale = true;
+ }
+ if (stale) {
+   s.widgets = {};
+   s.widgetsVersion = 2;
+   try { localStorage.setItem(SETTINGS_STORE_KEY, JSON.stringify(s)); } catch (e) {}
+ }
+ showStorageNote();
+ }
  else {
  try {
  const res = await fetch(`${API_BASE}/load`);
@@ -391,7 +505,10 @@ async function loadSettings() {
  document.getElementById("location").disabled = true;
  }
 
- if (s.widgets) {
+ if (s.widgets && fromOwnBrowser) {
+    // Widget checkboxes apply ONLY from this browser's own saved copy. The
+    // /load seed (owner's settings.json) must not tick widgets for a fresh
+    // visitor: every browser starts with no widgets and picks its own.
     for (const [key, value] of Object.entries(s.widgets)) {
       const id = WIDGET_KEY_TO_CHECKBOX[key];
       if (id) document.getElementById(id).checked = value;
@@ -426,8 +543,12 @@ async function loadSettings() {
  stockCryptoSelections = normalizeSelections(s.stockCryptoSelections);
  if (stockCryptoSelections.length) renderStockCryptoSelections();
 
+ const enabledCount = enforceWidgetLimit();
+ if (enabledCount > MAX_WIDGETS) {
+  showNotification("This dashboard has " + enabledCount + " widgets enabled - the maximum is 4. Please untick the extras before saving.", "info");
+ }
  } catch (e) {
- console.log("No saved settings found.");
+ console.log("loadSettings failed:", e);
  }
  }
 async function getCoordinates(locationName) {
@@ -1158,35 +1279,23 @@ if (layoutGridInteract) {
   });
 }
 
-// Widget checkboxes update the layout editor live (no 3-widget limit).
+// Widget checkboxes update the layout editor live (max 4 widgets) and persist
+// instantly, so unticked/ticked state survives reloads and the OAuth return.
 document.querySelectorAll(".limited-checkbox").forEach(checkbox => {
-  checkbox.addEventListener("change", renderLayoutEditor);
+  checkbox.addEventListener("change", () => {
+    persistWidgetState();
+    enforceWidgetLimit();
+    renderLayoutEditor();
+  });
 });
 
+enforceWidgetLimit();
 renderLayoutEditor();
 if (document.getElementById("location")) {
  loadSettings();
 }
 
 window.addEventListener("load", initializeHomeView);
-
-const notification = document.getElementById("site-notification");
-const notificationText = notification.querySelector(".site-notification__text");
-let notificationTimer;
-
-function showNotification(message, type = "info") {
- clearTimeout(notificationTimer);
-
- notificationText.textContent = message;
-
- notification.className = "site-notification";
- notification.classList.add("site-notification-visible");
- notification.classList.add(`site-notification--${type}`);
-
- notificationTimer = setTimeout(() => {
- notification.className = "site-notification";
- }, 3000);
-}
 
 const locationInput = document.getElementById("location");
 const suggestionsList = document.getElementById("location-suggestions");
@@ -1243,6 +1352,11 @@ if (saveSettingsBtn) {
  return;
  }
 
+ if (checked.length > MAX_WIDGETS) {
+ showNotification("Maximum of 4 widgets can be enabled.", "error");
+ return;
+ }
+
  if (!useIp && location.trim() === "") {
  showNotification("Please enter a location or enable IP location.", "error");
  return;
@@ -1272,6 +1386,7 @@ if (saveSettingsBtn) {
  location: location,
  coordinates: coords,
  useIpLocation: useIp,
+ widgetsVersion: 2,    // marks per-browser widget config (migration-safe)
  widgets: {
  weather: document.getElementById("weather-widget").checked,
  notifications: document.getElementById("notifications-widget").checked,

@@ -34,32 +34,89 @@ except ImportError:
     HAS_REQUESTS = False
 
 FONT_FAMILY = "Orbitron"
+# Orbitron TTFs bundled with the project (same font the website loads from
+# Google Fonts). The desktop (Tk) dashboard can only use fonts installed on
+# the machine, so we register these as *private* GDI fonts at Tk startup:
+# Windows keeps them for our process only — no global installation needed.
+_BUNDLED_FONT_FILES = ("Orbitron-Regular.ttf", "Orbitron-Bold.ttf")
+
+
+def register_orbitron_private():
+    """Make the bundled Orbitron font usable to Tk in this process (Windows).
+
+    AddFontResourceExW + FR_PRIVATE registers the font for this process only.
+    Must be called before widgets are created (Tk resolves font families on
+    first use). Callers on other platforms or with a missing fonts/ directory
+    get the previous behaviour: Tk silently falls back to its default font.
+    """
+    if sys.platform != "win32":
+        return
+    fonts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    try:
+        import ctypes
+
+        FR_PRIVATE = 0x10  # load the font for this process only
+        for name in _BUNDLED_FONT_FILES:
+            path = os.path.join(fonts_dir, name)
+            if os.path.isfile(path):
+                ctypes.windll.gdi32.AddFontResourceExW(path, FR_PRIVATE, None)
+    except Exception:
+        pass  # cosmetic enhancement — never block startup over it
+
+
+def _mask_email_display(raw):
+    """Anonymise an email address for display: keep only the first character of
+    the local part (e.g. "j***@example.com"). Non-email strings pass through."""
+    raw = (raw or "").strip()
+    at = raw.find("@")
+    if at <= 0:
+        return raw
+    return f"{raw[0]}***@{raw[at + 1:]}"
+
+
+def _mask_email_sender(raw):
+    """Safe-to-display sender line for MESSAGES widgets.
+
+    "Display Name <addr>" renders as the name only; a bare address is masked.
+    No dashboard — Tk or web — ever puts a raw email address on screen.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return "(unknown sender)"
+    if raw.endswith(">") and "<" in raw:
+        name, _lt, rest = raw.partition("<")
+        addr = rest[: -1].strip()
+        name = name.strip().strip('"').strip()
+        if name:
+            return name
+        return _mask_email_display(addr)
+    return _mask_email_display(raw)
 
 WEATHER_CODES = {
-    0: ("Clear sky", "☀"),
-    1: ("Mainly clear", "🌤"),
-    2: ("Partly cloudy", "⛅"),
-    3: ("Overcast", "☁"),
-    45: ("Fog", "🌫"),
-    48: ("Depositing rime fog", "🌫"),
-    51: ("Light drizzle", "🌧"),
-    53: ("Moderate drizzle", "🌧"),
-    55: ("Dense drizzle", "🌧"),
-    61: ("Slight rain", "🌧"),
-    63: ("Moderate rain", "🌧"),
-    65: ("Heavy rain", "🌧"),
-    71: ("Slight snow", "❄"),
-    73: ("Moderate snow", "❄"),
-    75: ("Heavy snow", "❄"),
-    77: ("Snow grains", "❄"),
-    80: ("Slight rain showers", "🌦"),
-    81: ("Moderate rain showers", "🌦"),
-    82: ("Violent rain showers", "⛈"),
-    85: ("Slight snow showers", "🌨"),
-    86: ("Heavy snow showers", "🌨"),
-    95: ("Thunderstorm", "⛈"),
-    96: ("Thunderstorm with hail", "⛈"),
-    99: ("Severe thunderstorm", "⛈"),
+    0: ("Clear sky", ""),
+    1: ("Mainly clear", ""),
+    2: ("Partly cloudy", ""),
+    3: ("Overcast", ""),
+    45: ("Fog", ""),
+    48: ("Depositing rime fog", ""),
+    51: ("Light drizzle", ""),
+    53: ("Moderate drizzle", ""),
+    55: ("Dense drizzle", ""),
+    61: ("Slight rain", ""),
+    63: ("Moderate rain", ""),
+    65: ("Heavy rain", ""),
+    71: ("Slight snow", ""),
+    73: ("Moderate snow", ""),
+    75: ("Heavy snow", ""),
+    77: ("Snow grains", ""),
+    80: ("Slight rain showers", ""),
+    81: ("Moderate rain showers", ""),
+    82: ("Violent rain showers", ""),
+    85: ("Slight snow showers", ""),
+    86: ("Heavy snow showers", ""),
+    95: ("Thunderstorm", ""),
+    96: ("Thunderstorm with hail", ""),
+    99: ("Severe thunderstorm", ""),
 }
 
 THEMES = {
@@ -185,7 +242,7 @@ def _open_meteo_url(coords):
         "longitude": lon,
         "current": (
             "temperature_2m,weathercode,"
-            "windspeed_10m,relative_humidity_2m,apparent_temperature"
+            "windspeed_10m,apparent_temperature"
         ),
         "wind_speed_unit": "kmh",
         "timezone": "auto",
@@ -204,8 +261,6 @@ def _fetch_open_meteo_current(coords, attempts=3, timeout=8):
     ``requests.exceptions.RequestException`` when every attempt fails, so the
     caller decides how to present the outage.
     """
-    lat = coords.get("lat") or coords.get("latitude") or 48.137
-    lon = coords.get("lon") or coords.get("longitude") or 11.575
     last_exc = None
     for attempt in range(attempts):
         try:
@@ -219,7 +274,6 @@ def _fetch_open_meteo_current(coords, attempts=3, timeout=8):
                 "desc": desc,
                 "icon": icon,
                 "wind": cur.get("windspeed_10m", "--"),
-                "humidity": cur.get("relative_humidity_2m", "--"),
             }
         except requests.exceptions.RequestException as exc:
             last_exc = exc
@@ -688,12 +742,10 @@ class BaseWidget:
         accent_color = self.colors["accent"]
         header_text_color = get_contrast_aware_text_color(widget_bg, accent_color)
 
-        # One singular pinpoint marker for every widget: a small accent square
-        # (no per-widget emoji icons).
-        marker_px = self.fs(9)
-        tk.Frame(h, bg=accent_color, width=marker_px, height=marker_px).pack(
-            side="left", padx=(0, 7), pady=1
-        )
+        # Kontrastbewusste Textfarbe für Header
+        widget_bg = self.colors["widget_bg"]
+        accent_color = self.colors["accent"]
+        header_text_color = get_contrast_aware_text_color(widget_bg, accent_color)
 
         tk.Label(
             h,
@@ -861,7 +913,7 @@ class WeatherWidget(BaseWidget):
             data = _fetch_open_meteo_current(self.settings.get("coordinates") or {})
             self.ui(lambda: self._show_weather(
                 data["temp"], data["feels"], data["desc"], data["icon"],
-                data["wind"], data["humidity"], location_name
+                data["wind"], location_name
             ))
         except requests.exceptions.RequestException:
             self.ui(self._show_weather_offline)
@@ -875,28 +927,25 @@ class WeatherWidget(BaseWidget):
             # error dump; the next automatic refresh retries anyway.
             self._show_weather(
                 last["temp"], last["feels"], last["desc"], last["icon"],
-                last["wind"], last["humidity"], last["location"],
+                last["wind"], last["location"],
             )
-            self.lbl_desc.config(text=f"⚠ {last['desc']} (offline)")
+            self.lbl_desc.config(text=f"{last['desc']} (offline)")
         else:
             self.lbl_temp.config(text="--°C")
-            self.lbl_desc.config(text="Weather service not reachable.\nRetrying…")
+            self.lbl_desc.config(text="Weather service not reachable.\nRetrying...")
 
-    def _show_weather(self, temp, feels, desc, icon, wind, humidity, location_name):
+    def _show_weather(self, temp, feels, desc, icon, wind, location_name):
         self._last_weather = {
             "temp": temp, "feels": feels, "desc": desc, "icon": icon,
-            "wind": wind, "humidity": humidity, "location": location_name,
+            "wind": wind, "location": location_name,
         }
-        self.lbl_temp.config(text=f"{icon} {temp}°C")
+        self.lbl_temp.config(text=f"{temp}°C")
         self.lbl_desc.config(text=desc)
 
         if self.big:
             self.lbl_location.config(text=location_name if location_name else "")
             self.lbl_details.config(
-                text=(
-                    f"Feels like {feels}°C • Wind {wind} km/h • "
-                    f"Humidity {humidity}%"
-                )
+                text=f"Feels like {feels}°C - Wind {wind} km/h"
             )
 
 
@@ -927,7 +976,7 @@ class CalendarWidget(BaseWidget):
             events = r.json().get("events", [])
             self.ui(lambda: self._render_events(events))
         except requests.exceptions.RequestException:
-            self.ui(lambda: self._set_status("Server not reachable.\n→ Start server.py"))
+            self.ui(lambda: self._set_status("Server not reachable.\n-> Start server.py"))
         except Exception as exc:
             err = str(exc)[:50]
             self.ui(lambda: self._set_status(f"Error: {err}"))
@@ -949,7 +998,7 @@ class CalendarWidget(BaseWidget):
 
             row = tk.Frame(self.list_frame, bg=self.colors["widget_bg"])
             row.pack(fill="x", pady=3)
-            tk.Label(row, text=f"● {start_fmt}", font=(FONT_FAMILY, self.fs(12)),
+            tk.Label(row, text=start_fmt, font=(FONT_FAMILY, self.fs(12)),
                     bg=self.colors["widget_bg"], fg=get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"]),
                     width=14, anchor="w").pack(side="left")
             tk.Label(row, text=summary, font=(FONT_FAMILY, self.fs(12)),
@@ -969,14 +1018,9 @@ class CalendarWidget(BaseWidget):
 
 class StockCryptoWidget(BaseWidget):
     REFRESH_INTERVAL = 120
-    RANGES = ("1D", "1W", "1M", "3M")
 
     def build(self):
         self._sels = _stock_crypto_selections(self.settings)
-        self._active = 0
-        self._range = "1D"
-        self._hist = {}        # {idx:range_key -> [[ms, close], ...]}
-        self._hist_token = 0   # invalidates stale history responses
 
         self.header("STOCKS")
 
@@ -989,8 +1033,7 @@ class StockCryptoWidget(BaseWidget):
         )
         fs_sym = self.fs(12 if self.big else 10)
         for idx, sel in enumerate(self._sels):
-            row = tk.Frame(self._rows_frame, bg=self.colors["widget_bg"],
-                           cursor="hand2")
+            row = tk.Frame(self._rows_frame, bg=self.colors["widget_bg"])
             row.pack(fill="x", pady=1)
 
             lbl_sym = tk.Label(row, text=sel["symbol"],
@@ -1008,158 +1051,18 @@ class StockCryptoWidget(BaseWidget):
                                  bg=self.colors["widget_bg"], fg=self.colors["text"])
             lbl_price.pack(side="right")
 
-            lbl_change = tk.Label(row, text="",
+            # Per-row status slot: normally empty; carries only a short error
+            # hint when that row's price cannot be fetched. No +/- change and
+            # no chart — a dashboard is a passive price display.
+            lbl_status = tk.Label(row, text="",
                                   font=(FONT_FAMILY, max(fs_sym - 1, 7)),
                                   bg=self.colors["widget_bg"], fg=self.colors["muted"])
-            lbl_change.pack(side="right", padx=(0, 6))
-
-            for w in (row, lbl_sym):
-                w.bind("<Button-1>", lambda e, i=idx: self._select(i))
-            if self.big:
-                lbl_name.bind("<Button-1>", lambda e, i=idx: self._select(i))
+            lbl_status.pack(side="right", padx=(0, 6))
 
             self._rows.append({
                 "sel": sel, "frame": row,
-                "price": lbl_price, "change": lbl_change,
+                "price": lbl_price, "status": lbl_status,
             })
-
-        # Chart canvas (a simple sparkline of the selected symbol's history).
-        self._chart = tk.Canvas(
-            self.inner, bg=self.colors["widget_bg"], highlightthickness=0,
-            bd=0, height=70 if self.big else 48,
-        )
-        self._chart.pack(fill="both", expand=True, pady=(6, 2))
-        self._chart.bind("<Configure>", lambda e: self._draw_chart())
-
-        # Range buttons (1D / 1W / 1M / 3M) under the chart.
-        btn_bar = tk.Frame(self.inner, bg=self.colors["widget_bg"])
-        btn_bar.pack(fill="x", pady=(0, 2))
-        self._range_btns = []
-        for r in self.RANGES:
-            btn = tk.Label(
-                btn_bar, text=r,
-                font=(FONT_FAMILY, max(self.fs(9), 7)),
-                bg=self.colors["widget_bg"], fg=self.colors["muted"],
-                cursor="hand2", padx=7, pady=1,
-            )
-            btn.pack(side="left", expand=True)
-            btn.bind("<Button-1>", lambda e, rr=r: self._set_range(rr))
-            self._range_btns.append((btn, r))
-
-        self._style_active()
-        self._load_history()
-
-    def _select(self, idx):
-        if idx == self._active:
-            return
-        self._active = idx
-        self._style_active()
-        self._load_history()
-
-    def _set_range(self, r):
-        if r == self._range:
-            return
-        self._range = r
-        self._style_active()
-        self._load_history()
-
-    def _style_active(self):
-        # Tk can't do translucent hex backgrounds; tint via a slightly blended
-        # color computed from accent and widget bg.
-        blend = self._tint(self.colors["widget_bg"], self.colors["accent"], 0.16)
-        for idx, entry in enumerate(self._rows):
-            bg = blend if idx == self._active else self.colors["widget_bg"]
-            for w in (entry["frame"], entry["price"], entry["change"]):
-                try:
-                    w.config(bg=bg)
-                except tk.TclError:
-                    pass
-        for btn, r in self._range_btns:
-            fg = (get_contrast_aware_text_color(self.colors["widget_bg"], self.colors["accent"])
-                  if r == self._range else self.colors["muted"])
-            try:
-                btn.config(fg=fg)
-            except tk.TclError:
-                pass
-
-    def _tint(self, base_hex, accent_hex, amount):
-        """Mix accent into base — a cheap stand-in for rgba backgrounds."""
-        def hex01(h):
-            h = (h or "#000000").lstrip("#")
-            if len(h) == 8:
-                h = h[:6]
-            try:
-                return [int(h[i * 2:i * 2 + 2], 16) / 255.0 for i in range(3)]
-            except (ValueError, IndexError):
-                return [0.0, 0.0, 0.0]
-        b = hex01(base_hex)
-        a = hex01(accent_hex)
-        mixed = tuple(round(bi * (1 - amount) + ai * amount) for bi, ai in zip(b, a))
-        return "#%02x%02x%02x" % mixed
-
-    def _draw_chart(self):
-        canvas = self._chart
-        if not canvas.winfo_exists():
-            return
-        canvas.delete("all")
-        points = self._hist.get(f"{self._active}:{self._range}") or []
-        if len(points) < 2:
-            return
-        w = max(canvas.winfo_width(), 40)
-        h = max(canvas.winfo_height(), 30)
-        vals = [p[1] for p in points]
-        lo, hi = min(vals), max(vals)
-        span = (hi - lo) or hi or 1
-        pad = 4
-
-        def xy(i, v):
-            x = pad + (i / (len(points) - 1)) * (w - 2 * pad)
-            y = h - pad - ((v - lo) / span) * (h - 2 * pad)
-            return (x, y)
-
-        canvas.create_line(
-            *[coord for i, p in enumerate(points) for coord in xy(i, p[1])],
-            fill=self.colors["accent"], width=2,
-        )
-        # last point marker
-        lx, ly = xy(len(points) - 1, vals[-1])
-        canvas.create_oval(lx - 2.5, ly - 2.5, lx + 2.5, ly + 2.5,
-                           fill=self.colors["accent"], outline=self.colors["accent"])
-
-    def _load_history(self):
-        """Fetch history for the active selection; old chart stays on failure."""
-        if not HAS_REQUESTS:
-            return
-        entry = self._rows[self._active]
-        sel = entry["sel"]
-        target = self._active
-        token = self._hist_token = self._hist_token + 1
-        key = f"{target}:{self._range}"
-        if key in self._hist:
-            self.ui(self._draw_chart)
-            return
-
-        def work():
-            try:
-                r = requests.get(
-                    f"{SERVER_URL}/finance/history",
-                    params={
-                        "type": sel["type"],
-                        "symbol": sel["symbol"],
-                        "name": sel["name"],
-                        "range": self._range,
-                    },
-                    timeout=15,
-                )
-                if r.status_code == 200 and self._hist_token == token and self._alive:
-                    pts = r.json().get("points") or []
-                    if pts:
-                        self._hist[key] = pts
-                        self.ui(self._draw_chart)
-            except Exception:
-                pass  # keep whatever chart is currently shown
-
-        run_in_thread(work)
 
     def fetch_data(self):
         """Prices for every selected symbol (worker thread context)."""
@@ -1172,6 +1075,8 @@ class StockCryptoWidget(BaseWidget):
             row_token = (idx, f"{sel['symbol']}/{sel['type']}")
 
             def deliver(data, i=idx, rt=row_token):
+                """Worker-thread callback: compute the row's new texts here and
+                hand every Tk update to the queue (Tk is not thread-safe)."""
                 if not self._alive:
                     return
                 row = self._rows[i] if i < len(self._rows) else None
@@ -1181,21 +1086,25 @@ class StockCryptoWidget(BaseWidget):
                 if f"{cur['symbol']}/{cur['type']}" != rt[1]:
                     return  # selection changed since the request started
                 if data.get("price") is None:
-                    # keep the old value; only refresh a still-empty row
-                    if row["price"].cget("text") == "--":
-                        row["price"].config(text=data.get("price_text", "Error"))
-                        row["change"].config(
-                            text=(data.get("error") or "No data")[:40],
-                            fg=self.colors["muted"])
+                    fill_text = data.get("price_text", "Error")
+                    err_text = (data.get("error") or "No data")[:40]
+
+                    def show_error(row=row, fill=fill_text, err=err_text):
+                        # keep the old value; only refresh a still-empty row
+                        if row["price"].cget("text") == "--":
+                            row["price"].config(text=fill)
+                        row["status"].config(text=err, fg=self.colors["muted"])
+
+                    self.ui(show_error)
                     return
                 price = float(data["price"])
-                change = float(data.get("change") or 0)
-                sign = "+" if change >= 0 else ""
-                row["price"].config(text=f"${price:,.2f}")
-                row["change"].config(
-                    text=f"{sign}{change:.2f}%",
-                    fg=self.colors["positive"] if change >= 0 else self.colors["negative"],
-                )
+                price_text = f"${price:,.2f}"
+
+                def show_price(row=row, txt=price_text):
+                    row["price"].config(text=txt)
+                    row["status"].config(text="")
+
+                self.ui(show_price)
 
             try:
                 r = requests.get(
@@ -1253,7 +1162,7 @@ class NotificationsWidget(BaseWidget):
             messages = r.json().get("messages", [])
             self.ui(lambda: self._render_messages(messages))
         except requests.exceptions.RequestException:
-            self.ui(lambda: self._set_status("Server not reachable.\n→ Start server.py"))
+            self.ui(lambda: self._set_status("Server not reachable.\n-> Start server.py"))
         except Exception as exc:
             err = str(exc)[:50]
             self.ui(lambda: self._set_status(f"Error: {err}"))
@@ -1296,14 +1205,14 @@ class NotificationsWidget(BaseWidget):
         row.pack(fill="x", pady=2)
 
         dot_color = self.colors["accent"] if is_unread else self.colors["muted"]
-        tk.Label(row, text="●" if is_unread else "○",
+        tk.Label(row, text="*" if is_unread else "-",
                 font=(FONT_FAMILY, self.fs(12)), bg=self.colors["widget_bg"],
                 fg=dot_color, width=2).pack(side="left")
 
         info = tk.Frame(row, bg=self.colors["widget_bg"])
         info.pack(side="left", fill="x", expand=True)
 
-        row.lbl_from = tk.Label(info, text=msg.get("from") or "(unknown sender)",
+        row.lbl_from = tk.Label(info, text=_mask_email_sender(msg.get("from")),
                 font=(FONT_FAMILY, self.fs(11), "bold"),
                 bg=self.colors["widget_bg"],
                 fg=self.colors["text"] if is_unread else self.colors["muted"],
@@ -1334,9 +1243,9 @@ class NotificationsWidget(BaseWidget):
     def _fit_labels(self):
         """Truncate sender/subject to the card width (ellipsis if needed).
 
-        The sender keeps its email address intact whenever possible: if
-        "Name <address>" is too wide, only "<address>" is shown, so it never
-        looks like a broken/partial address.
+        Senders already arrive masked (name only, or j***@domain — see
+        _mask_email_sender); the "<address>" tail shortcut only ever hits on
+        masked fallbacks, truncation stays purely cosmetic.
         """
         for row in self.list_frame.winfo_children():
             self._fit_one(row.lbl_from, keep_tail=True)
@@ -1359,7 +1268,7 @@ class NotificationsWidget(BaseWidget):
                     label.config(text=addr)
                     return
         # Longest prefix that fits together with an ellipsis.
-        ell = "…"
+        ell = "..."
         lo, hi = 0, len(text)
         while lo < hi:
             mid = (lo + hi + 1) // 2
@@ -1441,7 +1350,7 @@ class CountdownWidget(BaseWidget):
         try:
             target = datetime.fromisoformat(self._target_date)
             if target.tzinfo is not None:
-                # tz-aware date (ISO string with Z or offset) → normalize to
+                # tz-aware date (ISO string with Z or offset) -> normalize to
                 # local naive time so the subtraction below cannot raise a
                 # TypeError (naive vs aware datetime).
                 target = target.astimezone().replace(tzinfo=None)
@@ -1595,6 +1504,7 @@ def resolve_widget_layout(enabled_keys, layout):
 
 class Dashboard(tk.Tk):
     def __init__(self):
+        register_orbitron_private()  # bundled Orbitron for Tk, before first use
         super().__init__()
         self.settings = load_settings()
         self.colors = extract_colors(self.settings)
@@ -1750,18 +1660,13 @@ class Dashboard(tk.Tk):
         footer = tk.Frame(parent, bg=c["bg"])
         footer.pack(fill="x")
 
-        # Same singular accent-square pinpoint as the widget headers.
-        loc_row = tk.Frame(footer, bg=c["bg"])
-        loc_row.pack(side="right")
-        tk.Frame(loc_row, bg=c["accent"], width=7, height=7).pack(
-            side="left", padx=(0, 5), pady=1
-        )
+        # Keep showing the location; no decoration point in front of it.
         tk.Label(
-            loc_row,
+            footer,
             text=location,
             font=(FONT_FAMILY, 9),
             bg=c["bg"], fg=c["muted"],
-        ).pack(side="left")
+        ).pack(side="right")
 
 
 # ===== Streamlit / Web rendering (mirrors the Tkinter dashboard) =====
@@ -1866,7 +1771,7 @@ def _fetch_one_price_for_render(symbol, name, stype):
             err = f"HTTP {r.status_code}"
         return {"error": err[:40]}
     except requests.exceptions.RequestException:
-        return {"error": "→ Start server.py", "price_text": "Server off"}
+        return {"error": "-> Start server.py", "price_text": "Server off"}
 
 
 def _inject_css(colors):
@@ -1898,10 +1803,6 @@ def _inject_css(colors):
         display: flex; flex-direction: column; background: {widget_bg};
     }}
     .widget-header {{ display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }}
-    .widget-header-marker {{
-        width: 9px; height: 9px; border-radius: 2px; background: {accent};
-        display: inline-block; flex-shrink: 0; vertical-align: -1px;
-    }}
     .widget-header-title {{ font-size: 12px; font-weight: 700; letter-spacing: 1px; color: {header_text}; }}
     .widget-header-line {{ height: 2px; width: 72px; background: {accent}; margin-bottom: 10px; }}
     .widget-spacer {{ flex: 1; }}
@@ -1966,7 +1867,6 @@ def render_date_time_html(colors, settings, big, scale, content_h_px):
     date_fs = max(int((18 if big else 14) * scale), 10)
     html = f"""
     <div class="widget-header">
-        <span class="widget-header-marker"></span>
         <span class="widget-header-title" style="color:{header_text}">DATE &amp; TIME</span>
     </div>
     <div class="widget-header-line" style="background:{colors['accent']}"></div>
@@ -2003,19 +1903,13 @@ _WEATHER_POLLER_JS = """
   // Only ever called with fresh data — old content is never cleared first.
   function update(cur) {
     var code = CODES[String(cur.weathercode)] || ["Unknown", "?"];
-    setText("weather-temp", code[1] + " " + cur.temperature_2m + "°C");
+    setText("weather-temp", cur.temperature_2m + "°C");
     setText("weather-desc", code[0]);
     var loc = document.getElementById("weather-loc");
-    if (loc) {
-      // Keep the accent-square pinpoint, replace only the text after it.
-      var marker = loc.querySelector(".widget-header-marker");
-      loc.textContent = "";
-      if (marker) loc.appendChild(marker);
-      if (LOC) loc.appendChild(document.createTextNode(LOC));
-    }
+    if (loc && LOC) loc.textContent = LOC;
     setText("weather-details",
-      "Feels like " + cur.apparent_temperature + "°C • Wind " +
-      cur.windspeed_10m + " km/h • Humidity " + cur.relative_humidity_2m + "%");
+      "Feels like " + cur.apparent_temperature + "°C - Wind " +
+      cur.windspeed_10m + " km/h");
   }
   function poll() {
     fetch(URL)
@@ -2044,7 +1938,6 @@ def render_weather_html(colors, settings, big, scale):
         result = None
     html = f"""
     <div class="widget-header">
-        <span class="widget-header-marker"></span>
         <span class="widget-header-title" style="color:{header_text}">WEATHER</span>
     </div>
     <div class="widget-header-line" style="background:{colors['accent']}"></div>
@@ -2062,17 +1955,11 @@ def render_weather_html(colors, settings, big, scale):
         loc_text = ""
         details_text = ""
     else:
-        temp_text = f"{result['icon']} {result['temp']}°C"
+        temp_text = f"{result['temp']}°C"
         desc_text = result['desc']
         if big:
-            loc_text = (
-                f'<span class="widget-header-marker"></span> {result["location"]}'
-                if result['location'] else ""
-            )
-            details_text = (
-                f"Feels like {result['feels']}°C • Wind {result['wind']} km/h • "
-                f"Humidity {result['humidity']}%"
-            )
+            loc_text = result['location'] or ""
+            details_text = f"Feels like {result['feels']}°C - Wind {result['wind']} km/h"
         else:
             loc_text = ""
             details_text = ""
@@ -2102,7 +1989,7 @@ def render_weather_html(colors, settings, big, scale):
 # server. The iframe (srcdoc) inherits the page origin, so it can read the
 # same localStorage and call the same-origin API endpoints.
 _GOOGLE_WIDGET_TEMPLATE = """
-<div id="@@UID@@" class="widget-list"><div class="widget-status">Loading…</div></div>
+<div id="@@UID@@" class="widget-list"><div class="widget-status">Loading...</div></div>
 <script>
 (function() {
   var box = document.getElementById("@@UID@@");
@@ -2251,7 +2138,7 @@ def _google_widget_html(colors, header_text, endpoint, max_rows, scale, kind):
     events.slice(0, MAX_ROWS).forEach(function(ev) {
       var start = (ev.start && (ev.start.dateTime || ev.start.date)) || "";
       var row = el("div", "widget-list-row");
-      row.appendChild(el("span", "widget-list-time", "\\u25cf " + (start ? fmtStart(start) : start),
+      row.appendChild(el("span", "widget-list-time", " " + (start ? fmtStart(start) : start),
         "font-size:" + TIME_FS + "px;color:" + C.header));
       row.appendChild(el("span", "widget-list-text", ev.summary || "No title",
         "font-size:" + TIME_FS + "px"));
@@ -2261,7 +2148,23 @@ def _google_widget_html(colors, header_text, endpoint, max_rows, scale, kind):
     box.appendChild(frag);
   }"""
     else:
-        render_js = """  function render(messages) {
+        render_js = """  function maskAddr(a) {
+    a = String(a || "").trim();
+    var at = a.indexOf("@");
+    return at <= 0 ? a : a.charAt(0) + "***@" + a.slice(at + 1);
+  }
+  function maskFrom(raw) {
+    raw = String(raw || "").trim();
+    if (!raw) return "(unknown sender)";
+    var lt = raw.indexOf("<");
+    if (lt !== -1 && raw.charAt(raw.length - 1) === ">") {
+      var name = raw.slice(0, lt).trim().replace(/^"(.*)"$/, "$1").trim();
+      if (name) return name;
+      return maskAddr(raw.slice(lt + 1, raw.length - 1));
+    }
+    return maskAddr(raw);
+  }
+  function render(messages) {
     loaded = true;
     var frag = document.createDocumentFragment();
     if (!messages.length) {
@@ -2270,10 +2173,10 @@ def _google_widget_html(colors, header_text, endpoint, max_rows, scale, kind):
     messages.slice(0, MAX_ROWS).forEach(function(msg) {
       var unread = !!msg.unread;
       var row = el("div", "widget-msg-row");
-      row.appendChild(el("span", "widget-msg-dot", unread ? "\\u25cf" : "\\u25cb",
+      row.appendChild(el("span", "widget-msg-dot", unread ? "" : "",
         "font-size:" + FROM_FS + "px;color:" + (unread ? C.accent : C.muted)));
       var info = el("div", "widget-msg-info");
-      info.appendChild(el("div", "widget-msg-from", msg.from || "(unknown sender)",
+      info.appendChild(el("div", "widget-msg-from", maskFrom(msg.from),
         "font-size:" + FROM_FS + "px;color:" + (unread ? C.text : C.muted)));
       info.appendChild(el("div", "widget-msg-subject", msg.subject || "(no subject)",
         "font-size:" + FROM_FS + "px;color:" + C.muted));
@@ -2304,7 +2207,6 @@ def render_calendar_html(colors, settings, big, scale):
     )
     return f"""
     <div class="widget-header">
-        <span class="widget-header-marker"></span>
         <span class="widget-header-title" style="color:{header_text}">CALENDAR</span>
     </div>
     <div class="widget-header-line" style="background:{colors['accent']}"></div>
@@ -2312,19 +2214,16 @@ def render_calendar_html(colors, settings, big, scale):
     """
 
 
-# Stocks widget: multiple symbols (max 6), each with a sparkline chart. The
-# browser refreshes prices via the server's /finance/price endpoint and chart
-# history via /finance/history (same-origin, no key exposed) — no Streamlit
-# rerun. Old values/charts stay on screen whenever a poll fails or is still in
-# flight, and a chart is only drawn once its data has actually arrived.
+# Stocks widget: multiple symbols (max 6) rendered as a passive price list —
+# symbol, name and the live price. No +/- change, no chart, no click targets:
+# a dashboard shows what things cost, not how they move. The browser refreshes
+# prices via the server's /finance/price endpoint (same-origin, no key
+# exposed); old values stay on screen whenever a poll fails or is in flight.
 _STOCKS_WIDGET_JS = """
 <script>
 (function() {
   var SELECTIONS = @@SELECTIONS@@;
-  var C = @@COLORS@@;
   var INTERVAL = @@INTERVAL@@;   // 2 min for prices; retried after 30s on fail
-  // Chart range is fixed to 1 month — the tab buttons were dropped on purpose.
-  var RANGE = "1M";
   var API = "";
   try { API = window.parent.location.origin; } catch (e) {}
   // Relative-URL fallback: inside a sandboxed srcdoc iframe
@@ -2332,22 +2231,10 @@ _STOCKS_WIDGET_JS = """
   // resolve against the embedding page (same origin).
   if (!API || API.indexOf("http") !== 0) API = "";
 
-  var rows = [];
-  var active = 0;
-  var cache = {};          // idx -> points
-  var pending = {};        // idx -> true while a history fetch runs
-  var priceTimer = null;
-
   function priceUrl(sel) {
     return API + "/finance/price?type=" + encodeURIComponent(sel.type) +
       "&symbol=" + encodeURIComponent(sel.symbol) +
       "&name=" + encodeURIComponent(sel.name);
-  }
-  function historyUrl(sel) {
-    return API + "/finance/history?type=" + encodeURIComponent(sel.type) +
-      "&symbol=" + encodeURIComponent(sel.symbol) +
-      "&name=" + encodeURIComponent(sel.name) +
-      "&range=" + encodeURIComponent(RANGE);
   }
   function fmtMoney(n, frac) {
     return "$" + n.toLocaleString("en-US",
@@ -2362,18 +2249,21 @@ _STOCKS_WIDGET_JS = """
 
   // ---- prices: every row updates itself only when fresh data arrives ----
   function updatePrice(idx, sel, data) {
-    if (!data || data.price == null) return;
+    if (!data) return;
     var row = rowFor(idx);
     if (!row) return;
-    var price = Number(data.price);
-    var change = Number(data.change) || 0;
     var p = row.querySelector(".stocks-price");
-    if (p) p.textContent = fmtMoney(price, true);
-    var ch = row.querySelector(".stocks-change");
-    if (ch) {
-      ch.textContent = (change >= 0 ? "+" : "") + change.toFixed(2) + "%";
-      ch.style.color = change >= 0 ? C.positive : C.negative;
+    if (!p) return;
+    if (data.price == null) {
+      // keep the old value; only refresh a still-empty row
+      if (p.textContent === "--") p.textContent = data.price_text || "Error";
+      var e = row.querySelector(".stocks-err");
+      if (e) e.textContent = String(data.error || "").slice(0, 40);
+      return;
     }
+    p.textContent = fmtMoney(Number(data.price), true);
+    var e = row.querySelector(".stocks-err");
+    if (e) e.textContent = "";
   }
   function pollPrice(idx, sel) {
     fetch(priceUrl(sel))
@@ -2391,95 +2281,9 @@ _STOCKS_WIDGET_JS = """
     }, ms);
   }
 
-  // ---- chart: drawn only from fetched data; old chart stays otherwise ----
-  function drawChart() {
-    var canvas = document.getElementById("stocks-chart");
-    if (!canvas) return;
-    var ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    var ratio = (window.devicePixelRatio || 1) * (canvas._scale || 1);
-    var w = canvas.clientWidth || 0;
-    var h = canvas.clientHeight || 0;
-    if (!w || !h) return;
-    canvas.width = w * ratio;
-    canvas.height = h * ratio;
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-
-    var points = cache[active] || [];
-    if (points.length < 2) return;
-    var vals = points.map(function(p) { return p[1]; });
-    var lo = Math.min.apply(null, vals);
-    var hi = Math.max.apply(null, vals);
-    var span = (hi - lo) || hi || 1;
-    var pad = 6;
-    function sy(v) { return h - pad - ((v - lo) / span) * (h - 2 * pad); }
-
-    // line
-    ctx.strokeStyle = C.accent;
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    var x = points.map(function(p, i) {
-      var px = points.length > 1 ? (i / (points.length - 1)) * (w - 2 * pad) + pad : pad;
-      return px;
-    });
-    points.forEach(function(p, i) {
-      if (i === 0) ctx.moveTo(x[i], sy(p[1]));
-      else ctx.lineTo(x[i], sy(p[1]));
-    });
-    ctx.stroke();
-
-    // last price marker
-    var lx = x[x.length - 1], ly = sy(vals[vals.length - 1]);
-    ctx.beginPath();
-    ctx.arc(pad + (w - 2 * pad), ly, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = C.accent;
-    ctx.fill();
-  }
-  function loadHistory(idx, sel) {
-    var key = idx;
-    if (pending[key]) return;
-    if (cache[key]) { if (idx === active) drawChart(); return; }
-    pending[key] = true;
-    fetch(historyUrl(sel))
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) {
-        delete pending[key];
-        if (d && d.points && d.points.length > 1) {
-          cache[key] = d.points;
-          if (idx === active) drawChart();
-        }
-      })
-      .catch(function() {
-        delete pending[key];
-        // keep the old chart; retry later for this symbol
-      });
-  }
-  function setActive(idx) {
-    active = idx;
-    rows.forEach(function(row) {
-      row.style.background = (Number(row.getAttribute("data-idx")) === active)
-        ? C.rowActive : C.rowBg;
-    });
-    drawChart();
-    loadHistory(active, SELECTIONS[active]);
-  }
-
+  var priceTimer = null;
   function init() {
-    document.querySelectorAll("#stocks-rows .stocks-row").forEach(function(row, i) {
-      rows.push(row);
-    });
-    rows.forEach(function(row) {
-      row.style.cursor = "pointer";
-      row.addEventListener("click", function() {
-        setActive(Number(row.getAttribute("data-idx")));
-      });
-    });
-    setActive(0);
     schedulePrice(INTERVAL);
-    try {
-      window.addEventListener("resize", drawChart);
-    } catch (e) {}
   }
 
   init();
@@ -2490,14 +2294,12 @@ _STOCKS_WIDGET_JS = """
 _STOCKS_CSS = """
     .stocks-list { display: flex; flex-direction: column; min-height: 0; flex: 1; }
     .stocks-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 10px;
-                  border-radius: 10px; cursor: pointer; }
+                  border-radius: 10px; }
     .stocks-sym { font-weight: 700; color: @@HEADER@@; }
     .stocks-name { color: @@MUTED@@; overflow: hidden; text-overflow: ellipsis;
                    white-space: nowrap; flex: 1; }
     .stocks-price { color: @@TEXT@@; font-weight: 700; }
-    .stocks-change { color: @@MUTED@@; min-width: 74px; text-align: right; }
-    .stocks-chart-wrap { flex: 1.35; min-height: 60px; margin: 2px 10px 6px; }
-    .stocks-chart-wrap canvas { display: block; width: 100%; height: 100%; }
+    .stocks-err { color: @@MUTED@@; min-width: 74px; text-align: right; }
 """
 
 
@@ -2510,17 +2312,12 @@ def render_stock_crypto_html(colors, settings, big, scale):
     rows_html = []
     for idx, sel in enumerate(sels):
         result = _fetch_one_price_for_render(sel["symbol"], sel["name"], sel["type"])
-        change_fs = max(int((12 if big else 10) * scale), 8)
         if result.get("error") or result.get("price") is None:
             price_text = result.get("price_text", "Error")
-            change_text = result.get("error", "No data").replace("→", "-")[:40]
-            change_color = colors["muted"]
+            err_text = result.get("error", "No data").replace("->", "-")[:40]
         else:
             price_text = f'${result["price"]:,.2f}'
-            change = result["change"]
-            sign = "+" if change >= 0 else ""
-            change_text = f"{sign}{change:.2f}%"
-            change_color = colors["positive"] if change >= 0 else colors["negative"]
+            err_text = ""
         sym_fs = max(int((13 if big else 11) * scale), 8)
         price_fs = max(int((14 if big else 12) * scale), 9)
         rows_html.append(
@@ -2528,34 +2325,25 @@ def render_stock_crypto_html(colors, settings, big, scale):
             f'<span class="stocks-sym" style="font-size:{sym_fs}px">{_esc(sel["symbol"])}</span>'
             f'<span class="stocks-name" style="font-size:{sym_fs}px">{_esc(sel["name"])}</span>'
             f'<span class="stocks-price" style="font-size:{price_fs}px">{price_text}</span>'
-            f'<span class="stocks-change" style="font-size:{sym_fs}px;color:{change_color}">{_esc(change_text)}</span>'
+            f'<span class="stocks-err" style="font-size:{sym_fs}px">{_esc(err_text)}</span>'
             f'</div>'
         )
 
     html = f"""
     <div class="widget-header">
-        <span class="widget-header-marker"></span>
         <span class="widget-header-title" style="color:{header_text}">STOCKS</span>
     </div>
     <div class="widget-header-line" style="background:{colors['accent']}"></div>
     <div id="stocks-rows" class="stocks-list">{''.join(rows_html)}</div>
-    <div class="stocks-chart-wrap"><canvas id="stocks-chart"></canvas></div>
     <div class="widget-spacer"></div>
     """
-    # Client-side poller: prices every 2 min, chart history on demand.
-    # Charts always cover the last month (RANGE inside the script).
+    # Client-side poller: prices every 2 min (no chart history anywhere).
     html += (
         _STOCKS_WIDGET_JS
         .replace("@@SELECTIONS@@", json.dumps([
             {"idx": i, "type": s["type"], "symbol": s["symbol"], "name": s["name"]}
             for i, s in enumerate(sels)
         ]))
-        .replace("@@COLORS@@", json.dumps({
-            "text": colors["text"], "muted": colors["muted"],
-            "positive": colors["positive"], "negative": colors["negative"],
-            "accent": colors["accent"], "rowBg": colors["widget_bg"],
-            "rowActive": colors["accent"] + "22",
-        }))
         .replace("@@INTERVAL@@", "120000")
     )
     return html
@@ -2569,7 +2357,6 @@ def render_notifications_html(colors, settings, big, scale):
     )
     return f"""
     <div class="widget-header">
-        <span class="widget-header-marker"></span>
         <span class="widget-header-title" style="color:{header_text}">MESSAGES</span>
     </div>
     <div class="widget-header-line" style="background:{colors['accent']}"></div>
@@ -2617,7 +2404,6 @@ def render_countdown_html(colors, settings, big, scale):
     target_date = cd.get("date") or cd.get("targetDate") or settings.get("countdownDate") or settings.get("countdown_date") or ""
     html = f"""
     <div class="widget-header">
-        <span class="widget-header-marker"></span>
         <span class="widget-header-title" style="color:{header_text}">COUNTDOWN</span>
     </div>
     <div class="widget-header-line" style="background:{colors['accent']}"></div>
@@ -2635,7 +2421,7 @@ def render_countdown_html(colors, settings, big, scale):
         try:
             target = datetime.fromisoformat(target_date)
             if target.tzinfo is not None:
-                # tz-aware date → normalize to local naive time (same rule as
+                # tz-aware date -> normalize to local naive time (same rule as
                 # the Tk countdown) so the subtraction below cannot raise a
                 # TypeError (naive vs aware datetime).
                 target = target.astimezone().replace(tzinfo=None)
@@ -2716,10 +2502,11 @@ _SETTINGS_WATCHER_JS = """
 # The Streamlit page is just a bootstrap shell: it loads the browser's OWN
 # settings from localStorage and fetches the real dashboard HTML via
 # POST /settings/render, which renders exactly those settings on the server
-# without ever touching settings.json. Visitors (no saved settings) fall back
-# to the server's seed via GET /load so the page is never blank. Rendering
-# client-side means every visitor only ever sees — and changes — their own
-# settings, and the rendered page never flashes on any server rerun.
+# without ever touching settings.json. A fresh visitor (no saved settings)
+# sees an empty dashboard with a link to the settings page — every browser
+# activates its own widgets, none are inherited from the server's seed.
+# Rendering client-side means every visitor only ever sees — and changes —
+# their own settings, and the rendered page never flashes on any server rerun.
 _BOOTSTRAP_HTML = """
 <!DOCTYPE html>
 <html>
@@ -2772,26 +2559,42 @@ _BOOTSTRAP_HTML = """
     if (errEl) errEl.textContent = text;
   }
 
+  // First visit in this browser: start EMPTY. Widgets are per-browser — none
+  // are inherited from the server seed, so nothing is activated by default.
+  // The settings watcher below reloads this page as soon as this browser
+  // saves/changes its own settings.
+  function showEmpty() {
+    var msg = document.getElementById("boot-msg");
+    if (!msg) return;
+    msg.innerHTML = "";
+    var title = document.createElement("span");
+    title.textContent = "NO WIDGETS ENABLED YET";
+    var hint = document.createElement("span");
+    hint.textContent = "Widgets are private to this browser. Open the settings page to choose yours.";
+    hint.style.maxWidth = "72%";
+    hint.style.letterSpacing = "normal";
+    hint.style.fontSize = "11px";
+    hint.style.color = "#8fa3bd";
+    var link = document.createElement("a");
+    link.href = "/settings.html";
+    link.textContent = "OPEN SETTINGS";
+    link.style.cssText = "color:#3b82f6;text-decoration:none;border:1px solid #3b82f6;" +
+      "padding:9px 20px;border-radius:999px;font-size:11px;letter-spacing:2px;";
+    msg.appendChild(title);
+    msg.appendChild(hint);
+    msg.appendChild(link);
+  }
+
   function load() {
     var body = readSaved();
-    var p;
     if (body) {
-      p = render(body);
+      render(body).catch(function() {
+        showFatal("The dashboard could not be loaded. Is server.py running? Retrying...");
+        setTimeout(load, 5000);
+      });
     } else {
-      // First visit in this browser: use the server's stored settings as a
-      // read-only seed (GET /load strips Google secrets server-side).
-      // Relative URLs on purpose: inside a sandboxed srcdoc iframe
-      // location.origin is the string "null", but relative URLs still
-      // resolve against the embedding page — so the request always hits
-      // the same origin the site was opened from.
-      p = fetch("/load")
-        .then(function(r) { return r.ok ? r.json() : {}; })
-        .then(function(seed) { return render(JSON.stringify(seed || {})); });
+      showEmpty();
     }
-    p.catch(function() {
-      showFatal("The dashboard could not be loaded. Is server.py running? Retrying…");
-      setTimeout(load, 5000);
-    });
   }
 
   function render(settingsJson) {
@@ -2812,9 +2615,14 @@ _BOOTSTRAP_HTML = """
   load();
 })();
 </script>
-</body>
-</html>
 """
+
+# The empty-state shell needs the settings watcher as well: it reloads the
+# dashboard page as soon as this browser changes its (own) saved settings, so
+# a first-time visitor who opens Settings and enables widgets sees the
+# dashboard come alive without a manual refresh. (Plain-string template, so
+# the script is concatenated rather than interpolated.)
+_BOOTSTRAP_HTML += _SETTINGS_WATCHER_JS + "\n</body>\n</html>\n"
 
 
 def render_dashboard_html(settings):
@@ -2825,7 +2633,40 @@ def render_dashboard_html(settings):
     widgets_en = settings.get("widgets", {})
     enabled = [k for k, v in widgets_en.items() if v]
     if not enabled:
-        enabled = ["dateTime"]
+        # No widgets enabled in THIS browser: show a quiet hint instead of a
+        # surprise clock. Widgets are per-browser — nothing is inherited from
+        # the server's seed. The embedded settings watcher below reloads this
+        # page the moment this browser enables its own widgets.
+        footer_loc = settings.get("location", "")
+        empty_html = f"""
+        <style>
+            .no-widgets-hint {{ position: absolute; inset: 0; display: flex;
+                flex-direction: column; align-items: center; justify-content: center;
+                gap: 14px; color: {colors['text']}; }}
+            .no-widgets-title {{ font-size: 15px; font-weight: 700; letter-spacing: 3px; }}
+            .no-widgets-text {{ font-size: 11px; color: {colors['muted']}; max-width: 70%;
+                text-align: center; letter-spacing: normal; }}
+            .no-widgets-link {{ color: {colors['accent']}; text-decoration: none;
+                border: 1px solid {colors['accent']}; padding: 9px 20px;
+                border-radius: 999px; font-size: 11px; letter-spacing: 2px; }}
+        </style>
+        <div id="dashboard-header">
+            <h1>DASHBOARD</h1>
+            <div class="accent-line"></div>
+        </div>
+        <div id="dashboard-content">
+            <div class="no-widgets-hint">
+                <div class="no-widgets-title">NO WIDGETS ENABLED YET</div>
+                <div class="no-widgets-text">Widgets are private to this browser. Open the settings page to choose yours.</div>
+                <a class="no-widgets-link" href="/settings.html">OPEN SETTINGS</a>
+            </div>
+        </div>
+        <div id="dashboard-footer">
+            <span id="footer-location" style="color:{colors['muted']}">{footer_loc}</span>
+        </div>
+        {_SETTINGS_WATCHER_JS}
+        """
+        return css, empty_html
     order = settings.get("widgetOrder", [])
     ordered = [k for k in order if k in enabled]
     enabled = ordered + [k for k in enabled if k not in ordered]
@@ -2887,12 +2728,9 @@ def render_dashboard_html(settings):
     content_html += "</div>"
 
     footer_loc = settings.get("location", "")
-    footer_loc_html = (
-        f'<span class="widget-header-marker"></span> {footer_loc}' if footer_loc else ""
-    )
     footer_html = f"""
     <div id="dashboard-footer">
-        <span id="footer-location" style="color:{colors['muted']}">{footer_loc_html}</span>
+        <span id="footer-location" style="color:{colors['muted']}">{footer_loc}</span>
     </div>
     """
 
@@ -2956,7 +2794,7 @@ def _running_under_streamlit() -> bool:
         except Exception:
             return False
 
-    # Cannot verify a runtime → prefer the desktop dashboard. (Under a version
+    # Cannot verify a runtime -> prefer the desktop dashboard. (Under a version
     # too old/new for both checks the web path could degrade, but every
     # supported streamlit version satisfies at least one of the two checks.)
     return False
